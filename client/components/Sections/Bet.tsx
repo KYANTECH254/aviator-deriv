@@ -260,19 +260,40 @@ export default function Bet() {
     };
 
     const handleInputChange = (e: any) => {
-        const { value, id } = e.target;
+        let { value, id } = e.target;
+        // Allow only numbers and one decimal point
+        value = value.replace(/[^0-9.]/g, '');
+        // Prevent multiple decimal points
+        const parts = value.split('.');
+        if (parts.length > 2) {
+            value = parts[0] + '.' + parts.slice(1).join('');
+        }
+        // Limit to 2 decimal places
+        if (parts[1] && parts[1].length > 2) {
+            value = parseFloat(value).toFixed(2);
+        }
         setInputValues((prevValues) => ({
             ...prevValues,
-            [id]: parseFloat(value) || 0,
+            [id]: value === '' ? '' : parseFloat(value) || 0,
         }));
     };
 
     const handleCashOutInputChange = (e: React.ChangeEvent<HTMLInputElement>, inputKey: 'input3') => {
-        const parsedValue = parseFloat(e.target.value) || 1.10;
-
+        let value = e.target.value;
+        // Allow only numbers and one decimal point
+        value = value.replace(/[^0-9.]/g, '');
+        // Prevent multiple decimal points
+        const parts = value.split('.');
+        if (parts.length > 2) {
+            value = parts[0] + '.' + parts.slice(1).join('');
+        }
+        // Limit to 2 decimal places
+        if (parts[1] && parts[1].length > 2) {
+            value = parseFloat(value).toFixed(2);
+        }
         setInputValues((prevValues) => ({
             ...prevValues,
-            [inputKey]: parsedValue,
+            [inputKey]: value === '' ? '' : parseFloat(value) || 1.10,
         }));
     };
 
@@ -407,11 +428,12 @@ export default function Bet() {
                                 onMouseLeave={stopAdjustingValue}
                             >-</div>
                             <input
-                                type="number"
+                                type="text"
                                 className="aviator-bet-input"
                                 id="input1"
                                 onChange={handleInputChange}
-                                value={inputValues.input1.toFixed(2)}
+                                placeholder="0.00"
+                                value={typeof inputValues.input1 === 'number' ? inputValues.input1.toFixed(2) : inputValues.input1}
                             />
                             <div
                                 className="plus-btn"
@@ -537,7 +559,8 @@ export default function Bet() {
                                         id="aviator-auto-multiplier1"
                                         className="aviator-auto-multiplier"
                                         onChange={(e) => handleCashOutInputChange(e, 'input3')}
-                                        value={inputValues.input3.toFixed(2)}
+                                        placeholder="1.10"
+                                        value={typeof inputValues.input3 === 'number' ? inputValues.input3.toFixed(2) : inputValues.input3}
                                     />
                                     <button
                                         disabled={!isAutoCashoutInputEnabled || (AutoTradeBetOne && betOnePlaced && betOneStatus === "active" && isflyAway === "false")}
