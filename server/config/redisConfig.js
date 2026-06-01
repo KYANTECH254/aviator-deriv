@@ -8,7 +8,7 @@ const redisClient = new Redis({
 });
 
 // Connect only if not already connected
-if (!redisClient.status === 'connecting' && !redisClient.status === 'connect') {
+if (!['connecting', 'connect', 'ready'].includes(redisClient.status)) {
     redisClient.connect()
         .then(() => console.log("Connected to Redis!"))
         .catch(err => console.error("Redis connection error:", err));

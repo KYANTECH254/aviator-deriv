@@ -67,10 +67,10 @@ const fetchLiveBets = async (emitter) => {
             return;
         }
         // Fetch live bets for the latest round
-        const liveBets = await prisma.bet.findMany({
+        const liveBets = dedupeBetsByTrade(await prisma.bet.findMany({
             where: { round_id: latestMultiplier.id.toString() },
             orderBy: { createdAt: 'desc' },
-        });
+        }));
 
         // Calculate the total number of bets for the latest round
         const totalBetsCount = liveBets.length;
@@ -83,10 +83,10 @@ const fetchLiveBets = async (emitter) => {
 
         // Fetch the previous round's bets
         const previousRoundBets = previousRoundMultiplier
-            ? await prisma.bet.findMany({
+            ? dedupeBetsByTrade(await prisma.bet.findMany({
                 where: { round_id: previousRoundMultiplier.id.toString() },
                 orderBy: { createdAt: 'desc' },
-            })
+            }))
             : [];
 
         // Calculate the total number of bets for the previous round
@@ -131,13 +131,15 @@ const placeBet = async (socket, io) => {
                 appId: String(appId),
             };
 
-            const existingbet = await prisma.bet.findFirst({
+            const existingBets = await prisma.bet.findMany({
                 where: {
                     round_id: normalizedBet.round_id,
                     code: normalizedBet.code,
                     appId: normalizedBet.appId,
                 },
+                orderBy: { updatedAt: 'desc' },
             });
+            const existingbet = existingBets[0];
 
             let savedBet;
 
@@ -199,14 +201,75 @@ const emitAllBetsData = async (emitter) => {
         const bets = await prisma.bet.findMany({
             orderBy: { createdAt: 'desc' },
         });
-        emitter.emit('bets_data', bets);
+        emitter.emit('bets_data', dedupeBetsByTrade(bets));
     } catch (error) {
         console.error('Error fetching or emitting bets:', error);
     }
 };
 
-const handleChat = (socket, authToken) => {
-    const MAX_MESSAGES = 100
+const getBetTradeKey = (bet) => `${bet.round_id}:${bet.code}:${bet.appId}`;
+
+const getBetSortTime = (bet) => {
+    const timestamp = new Date(bet.updatedAt || bet.createdAt || 0).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const dedupeBetsByTrade = (bets) => {
+    const byTrade = new Map();
+
+    bets
+        .slice()
+        .sort((a, b) => getBetSortTime(b) - getBetSortTime(a))
+        .forEach((bet) => {
+            const tradeKey = getBetTradeKey(bet);
+
+            if (!byTrade.has(tradeKey)) {
+                byTrade.set(tradeKey, bet);
+            }
+        });
+
+    return Array.from(byTrade.values()).sort((a, b) => getBetSortTime(b) - getBetSortTime(a));
+};
+
+const CHAT_MESSAGE_LIMIT = 100;
+const DEFAULT_AVATAR = 'assets/images/avatar.png';
+
+const getChatKey = (appId) => `chat:${appId}`;
+
+const parseStoredChatMessage = (message) => {
+    try {
+        return JSON.parse(message);
+    } catch {
+        return null;
+    }
+};
+
+const normalizeChatMessage = (message, user) => ({
+    userId: user.username,
+    message: typeof message.message === 'string' ? message.message : '',
+    url: message.url || DEFAULT_AVATAR,
+    gifUrl: message.gifUrl || '',
+    messageId: message.messageId || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    betData: Array.isArray(message.betData) ? message.betData : [],
+    timestamp: message.timestamp || Date.now(),
+});
+
+const appendChatLikes = async (appId, userId, messages) => Promise.all(
+    messages.map(async (message) => {
+        const likeCountKey = `chat:${appId}:message:${message.messageId}:likes`;
+        const userLikesKey = `chat:${appId}:message:${message.messageId}:liked_users`;
+        const totalLikes = await redisClient.get(likeCountKey);
+        const userHasLiked = await redisClient.sismember(userLikesKey, userId);
+
+        return {
+            ...message,
+            likeCount: totalLikes ? parseInt(totalLikes, 10) : 0,
+            userHasLiked: userHasLiked === 1,
+        };
+    })
+);
+
+const handleChat = (socket, authToken, io) => {
 
     socket.on('join_chat', async (appId) => {
         try {
@@ -230,49 +293,27 @@ const handleChat = (socket, authToken) => {
             console.log(`User ${user.userId} joined chat ${appId}`);
 
             // Increment user count
-            const userCount = await redis.incr(redisKey);
+            const userCount = await redisClient.incr(redisKey);
             console.log(`User joined chat ${appId}, count: ${userCount}`);
 
             // Notify all clients of the updated user count
-            socket.emit('chat_count', userCount);
+            io.to(appId).emit('chat_count', userCount);
 
             console.log(`Fetching recent messages for room: ${appId}`);
-            const recentMessages = await redis.lrange(`chat:${appId}`, 0, MAX_MESSAGES - 1);
+            const recentMessages = await redisClient.lrange(getChatKey(appId), 0, CHAT_MESSAGE_LIMIT - 1);
 
             if (recentMessages.length === 0) {
                 console.log(`No messages found in chat room ${appId}`);
             }
 
-            // Process each message to fetch like count and user like status
-            const messagesWithLikes = await Promise.all(recentMessages.map(async (msg) => {
-                const message = JSON.parse(msg); // Parse the JSON string stored in Redis
+            const storedMessages = recentMessages
+                .map(parseStoredChatMessage)
+                .filter(Boolean)
+                .reverse();
+            const messagesWithLikes = await appendChatLikes(appId, user.userId, storedMessages);
+            socket.emit('chat_history', messagesWithLikes);
 
-                const likeCountKey = `chat:${appId}:message:${message.messageId}:likes`;
-                const userLikesKey = `chat:${appId}:message:${message.messageId}:liked_users`;
-
-                // Fetch total like count
-                const totalLikes = await redis.get(likeCountKey);
-                const likes = totalLikes ? parseInt(totalLikes, 10) : 0;
-
-                const likedUsers = await redis.smembers(userLikesKey); // Fetch all users in the set
-                console.log(`Liked Users for Message ${message.messageId}:`, likedUsers);
-
-                // Check if the current user has liked this message
-                const userHasLiked = await redis.sismember(userLikesKey, user.userId);
-
-                // Add like info to the message
-                return {
-                    ...message,
-                    likeCount: likes,
-                    userHasLiked: userHasLiked === 1, // Convert Redis 1/0 to boolean
-                };
-            }));
-
-            // Reverse the messages and emit
-            const reversedMessages = messagesWithLikes.reverse(); // No need for JSON.parse() here
-            socket.emit('receive_message', reversedMessages);
-
-            console.log(`Messages with Likes:`, reversedMessages);
+            console.log(`Messages with Likes:`, messagesWithLikes);
         } catch (error) {
             console.error('Error handling chat join:', error);
             socket.emit('error', 'Failed to join chat');
@@ -299,21 +340,21 @@ const handleChat = (socket, authToken) => {
                 return;
             }
 
-            const msg = { userId: user.username, message, url, gifUrl, messageId, betData, timestamp: Date.now() };
+            const msg = normalizeChatMessage({ message, url, gifUrl, messageId, betData }, user);
             console.log('Message to be sent:', msg);
 
             // Add message to Redis
             try {
                 console.log(`Adding message to Redis for chat room: ${appId}`);
-                await redis.lpush(`chat:${appId}`, JSON.stringify(msg));
+                await redisClient.lpush(getChatKey(appId), JSON.stringify(msg));
                 console.log('Message added to Redis');
 
                 // Limit the list to the maximum number of messages
-                await redis.ltrim(`chat:${appId}`, 0, MAX_MESSAGES - 1);
-                console.log(`Trimmed messages in Redis to the latest ${MAX_MESSAGES} messages`);
+                await redisClient.ltrim(getChatKey(appId), 0, CHAT_MESSAGE_LIMIT - 1);
+                console.log(`Trimmed messages in Redis to the latest ${CHAT_MESSAGE_LIMIT} messages`);
 
                 // Broadcast to the room
-                await socket.to(appId).emit('receive_message', [msg]);
+                await io.to(appId).emit('receive_message', [{ ...msg, likeCount: 0, userHasLiked: false }]);
                 console.log(`Message Broadcasted: ${[msg]}`)
             } catch (redisError) {
                 console.error('Error saving message to Redis:', redisError);
@@ -332,22 +373,26 @@ const handleChat = (socket, authToken) => {
         const userLikesKey = `chat:${appId}:message:${messageId}:liked_users`;
 
         // Check if user has already liked
-        const alreadyLiked = await redis.sismember(userLikesKey, userId);
+        const alreadyLiked = await redisClient.sismember(userLikesKey, userId);
 
         let newLikeCount = 0;
         if (alreadyLiked) {
             // User is unliking the message
-            await redis.srem(userLikesKey, userId);
-            newLikeCount = await redis.decr(likeCountKey);  // Decrease like count
+            await redisClient.srem(userLikesKey, userId);
+            newLikeCount = Math.max(0, await redisClient.decr(likeCountKey));  // Decrease like count
         } else {
-            await redis.sadd(userLikesKey, userId);
-            newLikeCount = await redis.incr(likeCountKey);  
+            await redisClient.sadd(userLikesKey, userId);
+            newLikeCount = await redisClient.incr(likeCountKey);  
         }
 
         socket.emit('update_like_count', {
             messageId,
             likeCount: newLikeCount,
             userHasLiked: !alreadyLiked,  
+        });
+        socket.to(appId).emit('update_like_count', {
+            messageId,
+            likeCount: newLikeCount,
         });
     });
 
@@ -360,12 +405,12 @@ const handleChat = (socket, authToken) => {
             }
 
             const redisKey = `chat_count:${appId}`;
-            const userCount = await redis.decr(redisKey);
+            const userCount = await redisClient.decr(redisKey);
             if (userCount < 0) {
-                await redis.set(redisKey, 0);
+                await redisClient.set(redisKey, 0);
             }
             console.log(`User left chat ${appId}, count: ${Math.max(userCount, 0)}`);
-            socket.emit('chat_count', Math.max(userCount, 0));
+            socket.to(appId).emit('chat_count', Math.max(userCount, 0));
         } catch (error) {
             console.error('Error leaving chat:', error);
         }
@@ -418,7 +463,7 @@ const initSocketServer = (httpServer) => {
             }
             await emitUserDataByToken(socket, authToken);
             await placeBet(socket, io);
-            handleChat(socket, authToken);
+            handleChat(socket, authToken, io);
             initFrontendSocketServer(socket);
             await initFunctionsOnLiveData(socket);
 

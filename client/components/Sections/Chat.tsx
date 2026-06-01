@@ -3,6 +3,49 @@ import { useEffect, useRef, useState } from "react";
 import Gif from "../PopUps/Gif";
 import { useAlert } from "@/context/AlertContext";
 
+const CHAT_MESSAGE_LIMIT = 100;
+const DEFAULT_AVATAR = "assets/images/avatar.png";
+
+const normalizeChatMessage = (msg: any) => {
+  const messageType =
+    msg.type ||
+    (Array.isArray(msg.betData) && msg.betData.length > 0
+      ? "win_display"
+      : Array.isArray(msg.bet) && msg.bet.length > 0
+        ? "win_display"
+        : msg.gifUrl
+          ? "gif"
+          : "text");
+
+  return {
+    type: messageType,
+    content: msg.message ?? msg.content ?? null,
+    userId: msg.userId,
+    url: msg.url || DEFAULT_AVATAR,
+    gifUrl: msg.gifUrl || null,
+    messageId: msg.messageId || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    userHasLiked: !!msg.userHasLiked,
+    likeCount: msg.likeCount || 0,
+    bet: messageType === "win_display" ? msg.betData || msg.bet || [] : [],
+  };
+};
+
+const mergeChatMessages = (existingMessages: any[], incomingMessages: any[]) => {
+  const messagesById = new Map(existingMessages.map((msg) => [msg.messageId, msg]));
+
+  incomingMessages
+    .filter((msg) => msg.userId)
+    .map(normalizeChatMessage)
+    .forEach((msg) => {
+      messagesById.set(msg.messageId, {
+        ...messagesById.get(msg.messageId),
+        ...msg,
+      });
+    });
+
+  return Array.from(messagesById.values()).slice(-CHAT_MESSAGE_LIMIT);
+};
+
 export default function Chat({ onToggleChat, activeAccount, username, socket, AllbetsData, Multipliers }: any) {
   const [isEmojiVisible, setIsEmojiVisible] = useState(false);
   const [isGifVisible, setIsGifVisible] = useState(false);
@@ -16,86 +59,49 @@ export default function Chat({ onToggleChat, activeAccount, username, socket, Al
   const { addAlert } = useAlert();
 
   useEffect(() => {
-    if (activeAccount?.derivId) {
-      const appId = activeAccount.derivId;
+    if (!socket?.emit || !socket?.on || !activeAccount?.derivId) return;
 
-      // Join the chat room
-      socket.emit("join_chat", appId);
-      console.log(`Joined chat room ${appId}`);
+    const appId = activeAccount.derivId;
 
-      // Listener for incoming messages
-      const handleReceiveMessage = (data: any) => {
-        console.log("Received data:", data);
+    const handleChatHistory = (data: any) => {
+      const history = Array.isArray(data) ? data : [data];
+      setMessages(mergeChatMessages([], history));
+      setNewMessages(0);
+      isAtBottomRef.current = true;
+    };
 
-        // Ensure data is normalized to an array
-        const messagesToAdd = Array.isArray(data) ? data : [data];
+    const handleReceiveMessage = (data: any) => {
+      const messagesToAdd = Array.isArray(data) ? data : [data];
+      setMessages((prevMessages) => mergeChatMessages(prevMessages, messagesToAdd));
+    };
 
-        // Validate and filter messages
-        const validMessages = messagesToAdd.filter((msg) => msg.userId && msg.url);
+    const handleChatCount = (data: any) => {
+      setchatCount(Number(data) || 0);
+    };
 
-        if (validMessages.length > 0) {
-          setMessages((prevMessages) => {
-            // Avoid duplication by ensuring new messages aren't already in the state
-            const newMessageIds = validMessages.map((msg) => msg.messageId);
-            const existingMessageIds = prevMessages.map((msg) => msg.messageId);
+    const handleSocketError = (data: any) => {
+      console.log(`Error ${data}`);
+    };
 
-            const nonDuplicateMessages = validMessages.filter(
-              (msg) => !existingMessageIds.includes(msg.messageId)
-            );
+    socket.emit("join_chat", appId);
+    socket.on("chat_history", handleChatHistory);
+    socket.on("receive_message", handleReceiveMessage);
+    socket.on("chat_count", handleChatCount);
+    socket.on("error", handleSocketError);
 
-            return [
-              ...prevMessages,
-              ...nonDuplicateMessages.map((msg) => {
-                const messageType =
-                  msg.betData && msg.betData.length > 0
-                    ? "win_display"
-                    : msg.gifUrl
-                      ? "gif"
-                      : "text";
-
-                return {
-                  type: messageType,
-                  content: msg.message || null,
-                  userId: msg.userId,
-                  url: msg.url,
-                  gifUrl: msg.gifUrl || null,
-                  messageId: msg.messageId,
-                  userHasLiked: !!msg.userHasLiked,
-                  likeCount: msg.likeCount || 0,
-                  bet: messageType === "win_display" ? msg.betData || [] : [],
-                };
-              }),
-            ];
-          });
-        } else {
-          console.log("Invalid message received (missing userId or url), ignoring.");
-        }
-      };
-
-      // Attach listeners
-      socket.on("receive_message", handleReceiveMessage);
-
-      socket.on("chat_count", (data: any) => {
-        console.log("Chat count:", data);
-        setchatCount(data);
-      });
-
-      socket.on("error", (data: any) => {
-        console.log(`Error ${data}`);
-      });
-
-      // Cleanup on unmount or dependency change
-      return () => {
-        socket.emit("leave_chat", appId);
-        socket.off("receive_message", handleReceiveMessage);
-        socket.off("chat_count");
-        socket.off("error");
-      };
-    }
-  }, [activeAccount]);
+    return () => {
+      socket.emit("leave_chat", appId);
+      socket.off("chat_history", handleChatHistory);
+      socket.off("receive_message", handleReceiveMessage);
+      socket.off("chat_count", handleChatCount);
+      socket.off("error", handleSocketError);
+    };
+  }, [activeAccount?.derivId, socket]);
 
   useEffect(() => {
-    socket.on('update_like_count', (data: any) => {
+    if (!socket?.on || !socket?.off) return;
+
+    const handleUpdateLikeCount = (data: any) => {
       const { messageId, likeCount, userHasLiked } = data;
 
       // Update the state with the new like count and user like status
@@ -105,15 +111,17 @@ export default function Chat({ onToggleChat, activeAccount, username, socket, Al
             ? {
               ...msg,
               likeCount, // Update likeCount
-              userHasLiked, // Update userHasLiked status
+              ...(typeof userHasLiked === "boolean" ? { userHasLiked } : {}),
             }
             : msg
         )
       );
-    });
+    };
+
+    socket.on('update_like_count', handleUpdateLikeCount);
 
     return () => {
-      socket.off('update_like_count');
+      socket.off('update_like_count', handleUpdateLikeCount);
     };
   }, [socket]);
 
@@ -169,42 +177,27 @@ export default function Chat({ onToggleChat, activeAccount, username, socket, Al
   }
 
   const handleGifSelect = (gifUrl: string) => {
-    if (activeAccount?.derivId) {
+    if (activeAccount?.derivId && socket?.emit) {
       const appId = activeAccount.derivId;
       const messageId = generateRandomMessageId();
       let url = localStorage.getItem('userAvatar');
       if (!url) {
-        url = "assets/images/avatar.png";
+        url = DEFAULT_AVATAR;
       }
 
       // Emit the GIF message
       socket.emit("send_message", { appId, message: "", gifUrl: gifUrl, url: url, messageId: messageId });
-
-      // Add the new message to the state, initializing likeCount and userHasLiked
-      setMessages((prevMessages) => [
-        ...prevMessages,
-        {
-          type: "gif",
-          content: gifUrl,
-          userId: username,
-          url: url,
-          message: "",
-          messageId: messageId,
-          likeCount: 0,            // Initialize like count
-          userHasLiked: false,     // Initialize user's like status
-        },
-      ]);
       setIsGifVisible(false);
     }
   };
 
   const sendMessage = () => {
-    if (message.trim() !== "" && message.length <= 250 && activeAccount?.derivId) {
+    if (message.trim() !== "" && message.length <= 250 && activeAccount?.derivId && socket?.emit) {
       const appId = activeAccount.derivId;
       const messageId = generateRandomMessageId(); // Generate random message ID
       let url = localStorage.getItem("userAvatar");
       if (!url) {
-        url = "assets/images/avatar.png";
+        url = DEFAULT_AVATAR;
       }
 
       // Extract bet ID from the message (if any)
@@ -217,12 +210,12 @@ export default function Chat({ onToggleChat, activeAccount, username, socket, Al
       if (betIdMatch) {
         const betId = betIdMatch[1]; // Extracted bet ID from message
         // Find bet data using the extracted bet ID
-        betData = AllbetsData.filter((bet: any) => String(bet.id) === String(betId));
+        betData = (Array.isArray(AllbetsData) ? AllbetsData : []).filter((bet: any) => String(bet.id) === String(betId));
         console.log(`BetData: ${JSON.stringify(betData)}`);
 
         if (betData.length > 0) {
           const roundId = betData[0]?.round_id; // Extract `round_id` from the bet data
-          const roundMultiplier = Multipliers.find((mul: any) => String(mul.id) === String(roundId))?.value;
+          const roundMultiplier = (Array.isArray(Multipliers) ? Multipliers : []).find((mul: any) => String(mul.id) === String(roundId))?.value;
 
           // Append `roundMultiplier` to the bet data
           if (roundMultiplier) {
@@ -251,22 +244,6 @@ export default function Chat({ onToggleChat, activeAccount, username, socket, Al
         betData: betData.length > 0 ? betData : [], // Only include bet data if it exists
         type: betData.length > 0 ? "win_display" : "text", // Set type to "win_display" if bet exists
       });
-
-      // Add the new message to the state
-      setMessages((prevMessages) => [
-        ...prevMessages,
-        {
-          type: betData.length > 0 ? "win_display" : "text", // If betData exists, it's a win_display message
-          content: cleanedMessage,
-          bet: betData, // Include the bet data if available, or an empty array if no bet
-          userId: username,
-          url: url,
-          gifUrl: "",
-          messageId: messageId,
-          likeCount: 0, // Initialize like count
-          userHasLiked: false, // Initialize user's like status
-        },
-      ]);
 
       setMessage(""); // Clear the input after sending
     } else if (message.length > 250) {
@@ -326,8 +303,8 @@ export default function Chat({ onToggleChat, activeAccount, username, socket, Al
         </div>
       </div>
       <div ref={chatContainerRef} onScroll={handleScroll} className="aviator-chat-section-body column">
-        {messages.map((msg, index) => (
-          <div key={index} className={`aviator-chat-item ${msg.type === 'win_display' ? 'bet-display' : ''} column`}>
+        {messages.map((msg) => (
+          <div key={msg.messageId} className={`aviator-chat-item ${msg.type === 'win_display' ? 'bet-display' : ''} column`}>
             <div className="aviator-chat-user row colg1">
               <img src={msg.url} alt="Avatar" />
               <div className="aviator-chat-username">

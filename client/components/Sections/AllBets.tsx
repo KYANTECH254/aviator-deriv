@@ -45,17 +45,31 @@ const formatAmount = (value: any) =>
 const normalizeStatus = (status: any) => String(status || "").toLowerCase();
 
 const getBetKey = (bet: BetRecord) =>
-    bet.id !== undefined && bet.id !== null
-        ? String(bet.id)
-        : `${bet.round_id || ""}:${bet.code || ""}:${bet.appId || ""}`;
+    bet.round_id && bet.code && bet.appId
+        ? `${bet.round_id}:${bet.code}:${bet.appId}`
+        : String(bet.id || "");
 
 const getBetTimestamp = (bet: BetRecord) => {
-    const timestamp = new Date(bet.createdAt || bet.updatedAt || 0).getTime();
+    const timestamp = new Date(bet.updatedAt || bet.createdAt || 0).getTime();
     return Number.isFinite(timestamp) ? timestamp : 0;
 };
 
 const sortBetsByNewest = (bets: BetRecord[]) =>
     [...bets].sort((a, b) => getBetTimestamp(b) - getBetTimestamp(a));
+
+const dedupeBetsByTrade = (bets: BetRecord[]) => {
+    const byTrade = new Map<string, BetRecord>();
+
+    sortBetsByNewest(bets).forEach((bet) => {
+        const tradeKey = getBetKey(bet);
+
+        if (!byTrade.has(tradeKey)) {
+            byTrade.set(tradeKey, bet);
+        }
+    });
+
+    return Array.from(byTrade.values());
+};
 
 const normalizeLiveBetsPayload = (payload: any): LiveBetsPayload => {
     if (Array.isArray(payload)) {
@@ -182,8 +196,8 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
             totalPreviousBetsCount,
         } = normalizeLiveBetsPayload(LiveBetsData);
 
-        const nextLiveBets = sortBetsByNewest(bets);
-        const nextPreviousBets = sortBetsByNewest(previousRoundBets);
+        const nextLiveBets = dedupeBetsByTrade(bets);
+        const nextPreviousBets = dedupeBetsByTrade(previousRoundBets);
 
         setLiveBets(nextLiveBets);
         setCurrentRoundId(round_id ? String(round_id) : '');
@@ -207,7 +221,7 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
             setCurrentRoundId(updatedRoundId);
         }
 
-        setLiveBets((prevBets) => sortBetsByNewest(upsertBet(prevBets, UpdatedBetData)));
+        setLiveBets((prevBets) => dedupeBetsByTrade(upsertBet(prevBets, UpdatedBetData)));
     }, [UpdatedBetData, currentRoundId]);
 
     useEffect(() => {
@@ -231,10 +245,10 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
         if (Array.isArray(AllbetsData) && activeAccount) {
             const accountCode = activeAccount.loginid || activeAccount.code || activeAccount.accountId;
             const accountAppId = activeAccount.derivId || activeAccount.appId;
-            const filteredBets = AllbetsData.filter((bet: any) =>
+            const filteredBets = dedupeBetsByTrade(AllbetsData.filter((bet: any) =>
                 (bet.code === accountCode || bet.code === activeAccount.code) &&
                 bet.appId === accountAppId
-            ).reverse();
+            ));
 
             setMyBets(filteredBets);
             setLoading(false);
