@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="438px" height="334px" viewBox="0 0 438 334" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="none">
+    <title>blur-low</title>
+    <defs>
+        <filter x="-70.1%" y="-166.7%" width="240.2%" height="433.3%" filterUnits="objectBoundingBox" id="filter-1">
+            <feGaussianBlur stdDeviation="50" in="SourceGraphic"/>
+        </filter>
+    </defs>
+    <g id="Ideas" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="idea---Bg-color-anim" transform="translate(-90.000000, -1190.000000)" fill="#FFFFFF">
+            <ellipse id="blur-low" filter="url(#filter-1)" cx="309" cy="1357" rx="107" ry="45"/>
+        </g>
+    </g>
+</svg>

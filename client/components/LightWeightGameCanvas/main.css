@@ -1,0 +1,632 @@
+/* @font-face {
+    font-family: Roboto;
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url(fonts/roboto.woff2) format("woff2")
+} */
+
+.gameD {
+    /* background-color: #0e0e0e; */
+    padding: 10px;
+    line-height: normal
+}
+
+.gameD *,
+.gameD *:before,
+.gameD *:after {
+    box-sizing: border-box
+}
+
+.gameD[data-milestone="1"] {
+    --milestone-color: #34b4ff
+}
+
+.gameD[data-milestone="2"] {
+    --milestone-color: #913ef8
+}
+
+.gameD[data-milestone="3"] {
+    --milestone-color: #c017b4
+}
+
+.light-canvas {
+    --plane-w: 100px;
+    --plane-h: 49.333333333px;
+    display: flex;
+    justify-content: center;
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    height: 340px;
+    border-radius: 20px;
+    border: 1px solid #2a2b2e;
+    background-color: #000;
+    container-type: size
+}
+
+.stop-bg-sun {
+    position: absolute;
+    left: -1380px;
+    bottom: -1380px;
+    width: 2760px;
+    height: 2760px;
+    background: url(/img/bg-sun.svg) center / contain no-repeat;
+    animation: _rotate_1qbfn_1 40s linear infinite paused
+}
+
+.bg-sun {
+    position: absolute;
+    left: -1380px;
+    bottom: -1380px;
+    width: 2760px;
+    height: 2760px;
+    background: url(/img/bg-sun.svg) center / contain no-repeat;
+    animation: _rotate_1qbfn_1 40s linear infinite paused
+}
+
+.gameD[data-state=flying] .bg-sun {
+    animation-play-state: paused
+}
+
+.gameD[data-state=flying][data-animation=enabled] .bg-sun {
+    animation-play-state: running
+}
+
+@media (max-width: 479.98px) {
+    .light-canvas {
+        height: 300px
+    }
+}
+
+@media (min-width: 640px) {
+    .light-canvas {
+        --plane-w: 150px;
+        --plane-h: 74px
+    }
+}
+
+@keyframes _rotate_1qbfn_1 {
+    to {
+        transform: rotate(360deg)
+    }
+}
+
+._preloader_va01y_1 {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    text-align: center
+}
+
+._propeller_va01y_10 {
+    animation: _rotate_va01y_1 1.4s linear infinite;
+    width: min(20%, 120px);
+    max-width: 100%;
+    height: auto
+}
+
+._text_va01y_17 {
+    color: #fff;
+    text-transform: uppercase;
+    font-size: min(36px, 3.57143vw + 7.14286px);
+    font-size: min(36px, 3.57143cqw + 7.14286px);
+    margin-top: 10px
+}
+
+._rate_va01y_25 {
+    background-color: #e50539;
+    width: fit-content;
+    margin-inline: auto;
+    border-radius: 5px;
+    line-height: 1;
+    padding: 5px 10px
+}
+
+._progress_va01y_34 {
+    height: 7px;
+    background-color: #262830;
+    border-radius: 7px;
+    width: min(100%, 300px);
+    margin: 10px auto
+}
+
+._progress_va01y_34:before {
+    content: "";
+    display: block;
+    height: 100%;
+    width: 0%;
+    background-color: #e50539;
+    border-radius: inherit;
+    animation: _loading_va01y_1 10s linear forwards
+}
+
+@keyframes _loading_va01y_1 {
+    to {
+        width: 100%
+    }
+}
+
+@keyframes _rotate_va01y_1 {
+    to {
+        transform: rotate(360deg)
+    }
+}
+
+.uppercase {
+    text-transform: uppercase
+}
+
+._lowercase_skckg_4 {
+    text-transform: lowercase
+}
+
+.score {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    white-space: nowrap
+}
+
+.messageG {
+    text-transform: uppercase;
+    font-size: min(36px, 3.57143vw + 7.14286px);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translate(-50%)
+}
+
+.valueS {
+    font-weight: 700;
+    font-family: Roboto, sans-serif;
+    font-size: min(110px, 6.0606060606vw + 37.2727272727px);
+    font-size: min(110px, 6.0606060606cqw + 37.2727272727px);
+    text-shadow: 2px 2px 2px rgba(0, 0, 0, .1)
+}
+
+.aviator[data-state=flewAway] .valueS {
+    color: #d0021b
+}
+
+._result_1j4oa_1 {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 5px 10px;
+    padding: 5px 5px 5px 10px;
+    position: absolute;
+    top: 30px;
+    z-index: 1;
+    background-color: #123405;
+    border: 1px solid #427f00;
+    border-radius: 26px;
+    color: #fff;
+    box-shadow: 0 0 8px #0000004d;
+    text-align: center;
+    opacity: 1;
+    transition-property: transform, opacity;
+    transition-duration: .5s;
+    text-decoration: none
+}
+
+.prizeBtnW {
+    min-width: 120px
+}
+
+@starting-style {
+    ._result_1j4oa_1 {
+        transform: translateY(-200%);
+        opacity: 0
+    }
+}
+
+.win-label {
+    font-size: 12px;
+    color: #9ea0a3
+}
+
+.win-value {
+    font-size: 20px
+}
+
+.prizeBtn {
+    min-width: var(--min-width);
+    padding: 5px 26px;
+    border-radius: 23px;
+    background: url(/img/stars.svg) left center no-repeat, url(/img/stars.svg) right center no-repeat #4eaf11;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .5);
+    font-size: 14px;
+    transition: filter .25s;
+    animation: _blink_18aq9_1 1s infinite
+}
+
+@keyframes _blink_18aq9_1 {
+    50% {
+        filter: brightness(130%)
+    }
+}
+
+._result_uuhxu_1 {
+    padding: 20px;
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: #123405;
+    border: 1px solid #427f00;
+    border-radius: 26px;
+    color: #fff;
+    text-align: center;
+    transition-property: transform, opacity;
+    transition-duration: .5s;
+    text-decoration: none
+}
+
+@starting-style {
+    ._result_uuhxu_1 {
+        transform: translateY(-50%) scale(0);
+        opacity: 0
+    }
+}
+
+._text_uuhxu_24 {
+    font-weight: 700
+}
+
+._label_uuhxu_28 {
+    margin-bottom: 3px;
+    font-size: 14px
+}
+
+._value_uuhxu_33 {
+    font-size: 18px
+}
+
+._btn_uuhxu_37 {
+    margin-top: 15px;
+    min-width: 250px;
+    text-transform: uppercase
+}
+
+._controls_1a1wc_1 {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px
+}
+
+._group_1a1wc_8 {
+    flex-basis: 0;
+    flex-grow: 1;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 10px;
+    background-color: #1b1c1d;
+    border: 1px solid var(--btn-background-color, transparent);
+    color: #fff
+}
+
+._themeSecondary_1a1wc_22 {
+    --btn-border-color: #ffbd71;
+    --btn-background-color: #d07206
+}
+
+._btn_1a1wc_27 {
+    width: min(100%, 200px);
+    border-radius: 20px;
+    border: 1px solid var(--btn-border-color, #b2f2a3);
+    background-color: var(--btn-background-color, #28a909);
+    padding: 10px 25px;
+    box-shadow: inset 0 1px 1px #ffffff80;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .5);
+    text-align: center;
+    text-transform: uppercase;
+    font-size: 20px;
+    font-family: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color .15s ease-in-out, filter .25s
+}
+
+.aviator[data-state=loading] ._btn_1a1wc_27:not(:disabled) {
+    animation: _blink_1a1wc_1 1s infinite
+}
+
+._btn_1a1wc_27:disabled {
+    cursor: default;
+    opacity: .5
+}
+
+._btnRow_1a1wc_56 {
+    display: block
+}
+
+._bet_1a1wc_60 {
+    font-size: 24px
+}
+
+._currency_1a1wc_64 {
+    font-size: 18px
+}
+
+@media (max-width: 859.98px) {
+    ._group_1a1wc_8[inert] {
+        display: none
+    }
+}
+
+@media (hover: hover) {
+    ._btn_1a1wc_27:not(:disabled):hover {
+        filter: brightness(120%)
+    }
+}
+
+@keyframes _blink_1a1wc_1 {
+    50% {
+        filter: brightness(130%)
+    }
+}
+
+._quantity_1xnab_1 {
+    display: flex;
+    align-items: center;
+    column-gap: 4px;
+    width: 150px;
+    padding-left: 10px;
+    padding-right: 10px;
+    background-color: #000000b3;
+    border-radius: 22px;
+    border: 1px solid #333333
+}
+
+._quantity_1xnab_1:not(:last-child) {
+    margin-bottom: 5px
+}
+
+._btn_1xnab_17 {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background-color: transparent;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 16px;
+    border: 1px solid #767981;
+    -webkit-user-select: none;
+    user-select: none;
+    transition-property: opacity;
+    transition-duration: .3s
+}
+
+._btn_1xnab_17:not(:disabled) {
+    cursor: pointer
+}
+
+._minusBtn_1xnab_37 {
+    background-image: url("data:image/svg+xml,%3Csvg version='1.1' xmlns='http://www.w3.org/2000/svg' width='768' height='768' viewBox='0 0 768 768'%3E%3Cpath d='M160 416h448c17.664 0 32-14.336 32-32s-14.336-32-32-32h-448c-17.664 0-32 14.336-32 32s14.336 32 32 32z' fill='%23767981'%3E%3C/path%3E%3C/svg%3E")
+}
+
+._plusBtn_1xnab_41 {
+    background-image: url("data:image/svg+xml,%3Csvg version='1.1' xmlns='http://www.w3.org/2000/svg' width='768' height='768' viewBox='0 0 768 768'%3E%3Cpath fill='%23767981' d='M160 416h192v192c0 17.664 14.336 32 32 32s32-14.336 32-32v-192h192c17.664 0 32-14.336 32-32s-14.336-32-32-32h-192v-192c0-17.664-14.336-32-32-32s-32 14.336-32 32v192h-192c-17.664 0-32 14.336-32 32s14.336 32 32 32z'%3E%3C/path%3E%3C/svg%3E")
+}
+
+._input_1xnab_45 {
+    width: 100%;
+    height: 32px;
+    min-width: 0;
+    text-align: center;
+    background-color: transparent;
+    border: none;
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    outline: none;
+    transition: opacity .3s
+}
+
+._input_1xnab_45:disabled {
+    opacity: .5
+}
+
+.contrail {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%
+}
+
+.planeWrapper {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0
+}
+
+.aviator[data-state=loading] .light-plane {
+    position: absolute;
+    left: 30px;
+    bottom: 33px;
+    transform: translate(-13%, 5%)
+}
+
+.light-plane {
+    position: absolute;
+    width: var(--plane-w);
+    height: var(--plane-h)
+}
+
+.aviator[data-state=flying] .light-plane,
+.aviator[data-state=flewAway] .light-plane {
+    offset-rotate: 0deg;
+    offset-anchor: 13% 95%;
+    animation: _takeoff_1xp9l_1 8s normal cubic-bezier(.5, .5, .5, 1), _gliding_1xp9l_1 8s 8s infinite alternate cubic-bezier(.5, 0, .5, 1)
+}
+
+.light-plane:before {
+    content: "";
+    display: block;
+    height: 100%;
+    background: url(/img/plane.svg) 0 0 / auto 100% no-repeat;
+    animation: _propeller_1xp9l_1 .4s steps(3) infinite
+}
+
+.aviator[data-state=flewAway] .planeWrapper {
+    transform: translate(100%, -50%);
+    transition: transform .5s linear
+}
+
+@keyframes _takeoff_1xp9l_1 {
+    0% {
+        offset-path: var(--path1);
+        offset-distance: 0%
+    }
+
+    to {
+        offset-path: var(--path1);
+        offset-distance: 100%
+    }
+}
+
+@keyframes _gliding_1xp9l_1 {
+    0% {
+        offset-path: var(--path2);
+        offset-distance: 0%
+    }
+
+    to {
+        offset-path: var(--path2);
+        offset-distance: 100%
+    }
+}
+
+@keyframes _propeller_1xp9l_1 {
+    to {
+        background-position: calc(var(--plane-w) * -3) 0
+    }
+}
+
+.dotsT {
+    position: absolute;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    animation-delay: 8s;
+    border-width: 2px;
+    border-color: #271e20
+}
+
+.aviator:not([data-state=flying]) .dotsT {
+    display: none
+}
+
+.dotsHorizontal {
+    bottom: 0;
+    left: 30px;
+    width: calc(100% - 30px);
+    height: 30px;
+    border-top-style: solid;
+    background: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="90" height="90"><circle cx="45" cy="45" r="2" fill="%23fff"/></svg>') left center repeat-x;
+    animation-name: _move-x_t0iia_1;
+    animation-duration: 5s
+}
+
+.dotsVertical {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 30px;
+    height: calc(100% - 30px);
+    border-right-style: solid;
+    background: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36"><circle cx="18" cy="18" r="2" fill="%2334b4ff"/></svg>') center top repeat-y;
+    animation-name: _move-y_t0iia_1;
+    animation-duration: 1.9s
+}
+
+@keyframes _move-x_t0iia_1 {
+    to {
+        background-position-x: -90px
+    }
+}
+
+@keyframes _move-y_t0iia_1 {
+    to {
+        background-position-y: 36px
+    }
+}
+
+.lighting {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background-color: var(--aviator-stage-color);
+    -webkit-mask: url(/img/blur-low.svg) center / 100% 100% no-repeat;
+    mask: url(/img/blur-low.svg) center / 100% 100% no-repeat;
+    transition: background-color 1s;
+    background-color: var(--milestone-color, transparent)
+}
+
+.flight-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.flight-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.flight-fill {
+    fill: rgba(255, 0, 0, 0.16);
+    stroke: none;
+}
+
+.flight-trail {
+    fill: none;
+    stroke: #ff1d1d;
+    stroke-width: 5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 7px rgba(255, 0, 0, 0.45));
+}
+
+.flight-plane {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 135px;
+    height: 100px;
+    transform-origin: center;
+    will-change: transform, opacity;
+}
+
+.flight-plane-img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+    user-select: none;
+    pointer-events: none;
+    filter: drop-shadow(0 5px 8px rgba(0, 0, 0, 0.35));
+}
