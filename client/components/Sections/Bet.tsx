@@ -10,7 +10,7 @@ export default function Bet() {
     const [isAutoBetVisible1, setIsAutoBetVisible1] = useState(false);
     const [isAutoCashoutInputEnabled, setIsAutoCashoutInputEnabled] = useState(false);
     const [isBetOneAuto, setIsBetOneAuto] = useState(false);
-    const [inputValues, setInputValues] = useState({ input1: 10.00, input3: 1.10 });
+    const [inputValues, setInputValues] = useState({ input1: "10.00", input3: "1.10" });
     const [lastAddedValues, setLastAddedValues] = useState({ input1: 0, input2: 0 });
     const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null);
     const [multiplier, setMultiplier] = useState("1.00")
@@ -212,10 +212,36 @@ export default function Bet() {
         };
     }, [intervalId]);
 
+    const parseInputNumber = (value: string, fallback = 0) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
+    const formatMoney = (value: string | number) => parseInputNumber(String(value)).toFixed(2);
+
+    const sanitizeDecimalInput = (value: string) => {
+        const sanitized = value.replace(/[^0-9.]/g, '');
+        const [whole, ...decimalParts] = sanitized.split('.');
+        const decimal = decimalParts.join('');
+
+        if (decimalParts.length === 0) {
+            return whole;
+        }
+
+        return `${whole}.${decimal.slice(0, 2)}`;
+    };
+
+    const blockInvalidNumberInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.key.length === 1 && !/[0-9.]/.test(e.key)) {
+            e.preventDefault();
+        }
+    };
+
     const handleDataValueClick = (input: 'input1', value: number) => {
         setInputValues(prev => ({
             ...prev,
-            [input]: prev[input] + value
+            [input]: formatMoney(parseInputNumber(prev[input]) + value)
         }));
         setLastAddedValues(prev => ({
             ...prev,
@@ -226,19 +252,19 @@ export default function Bet() {
     const handleRepeatedDataValueClick = (input: 'input1') => {
         setInputValues(prev => ({
             ...prev,
-            [input]: prev[input] + lastAddedValues[input]
+            [input]: formatMoney(parseInputNumber(prev[input]) + lastAddedValues[input])
         }));
     };
 
     const startAdjustingValue = (input: 'input1', change: number) => {
         setInputValues(prev => ({
             ...prev,
-            [input]: Math.max(0, prev[input] + change)
+            [input]: formatMoney(Math.max(0, parseInputNumber(prev[input]) + change))
         }));
         const id = setInterval(() => {
             setInputValues(prev => ({
                 ...prev,
-                [input]: Math.max(0, prev[input] + change)
+                [input]: formatMoney(Math.max(0, parseInputNumber(prev[input]) + change))
             }));
         }, 100);
         setIntervalId(id);
@@ -261,43 +287,23 @@ export default function Bet() {
 
     const handleInputChange = (e: any) => {
         let { value, id } = e.target;
-        // Allow only numbers and one decimal point
-        value = value.replace(/[^0-9.]/g, '');
-        // Prevent multiple decimal points
-        const parts = value.split('.');
-        if (parts.length > 2) {
-            value = parts[0] + '.' + parts.slice(1).join('');
-        }
-        // Limit to 2 decimal places
-        if (parts[1] && parts[1].length > 2) {
-            value = parseFloat(value).toFixed(2);
-        }
-        // Always store as number, never empty string
-        const numValue = value === '' || value === '.' ? 0 : parseFloat(value) || 0;
         setInputValues((prevValues) => ({
             ...prevValues,
-            [id]: numValue,
+            [id]: sanitizeDecimalInput(value),
         }));
     };
 
     const handleCashOutInputChange = (e: React.ChangeEvent<HTMLInputElement>, inputKey: 'input3') => {
-        let value = e.target.value;
-        // Allow only numbers and one decimal point
-        value = value.replace(/[^0-9.]/g, '');
-        // Prevent multiple decimal points
-        const parts = value.split('.');
-        if (parts.length > 2) {
-            value = parts[0] + '.' + parts.slice(1).join('');
-        }
-        // Limit to 2 decimal places
-        if (parts[1] && parts[1].length > 2) {
-            value = parseFloat(value).toFixed(2);
-        }
-        // Always store as number, never empty string
-        const numValue = value === '' || value === '.' ? 1.10 : parseFloat(value) || 1.10;
         setInputValues((prevValues) => ({
             ...prevValues,
-            [inputKey]: numValue,
+            [inputKey]: sanitizeDecimalInput(e.target.value),
+        }));
+    };
+
+    const handleInputBlur = (inputKey: 'input1' | 'input3', fallback: number) => {
+        setInputValues((prevValues) => ({
+            ...prevValues,
+            [inputKey]: formatMoney(prevValues[inputKey] === "" || prevValues[inputKey] === "." ? fallback : prevValues[inputKey]),
         }));
     };
 
@@ -316,8 +322,8 @@ export default function Bet() {
             parseFloat(((takeProfit * stake) - stake).toFixed(2));
 
         if (betOnePlaced) {
-            const stake = inputValues.input1 || 0;
-            const takeProfit = inputValues.input3 || 0;
+            const stake = parseInputNumber(inputValues.input1);
+            const takeProfit = parseInputNumber(inputValues.input3);
 
             const profit = calculateProfit(stake, takeProfit);
 
@@ -332,8 +338,8 @@ export default function Bet() {
             setbetOnePlaced(false);
             setbetOneStatus("");
         } else {
-            let stake = inputValues.input1 || 0;
-            let takeProfit = inputValues.input3 || 0;
+            let stake = parseInputNumber(inputValues.input1);
+            let takeProfit = parseInputNumber(inputValues.input3);
 
             if (isInvalidValue(stake, minimumBet, maximumBet)) {
                 stake = defaultStake;
@@ -388,6 +394,8 @@ export default function Bet() {
         setbetOneStatus("")
     }
 
+    const isAutoCashoutLocked = !isAutoCashoutInputEnabled || AutoTradeBetOne || (betOnePlaced && betOneStatus === "active" && isflyAway === "false");
+
     return (
         <div className="aviator-btns-container">
 
@@ -433,11 +441,15 @@ export default function Bet() {
                             >-</div>
                             <input
                                 type="text"
+                                inputMode="decimal"
+                                pattern="[0-9]*[.]?[0-9]*"
                                 className="aviator-bet-input"
                                 id="input1"
+                                onKeyDown={blockInvalidNumberInput}
                                 onChange={handleInputChange}
+                                onBlur={() => handleInputBlur('input1', 10)}
                                 placeholder="0.00"
-                                value={Number(inputValues.input1).toFixed(2)}
+                                value={inputValues.input1}
                             />
                             <div
                                 className="plus-btn"
@@ -516,7 +528,7 @@ export default function Bet() {
                             {!betOnePlaced && (
                                 <>
                                     <span className="aviator-bet-btn-text">BET</span>
-                                    <span id="aviator-bet-btn-amount" className="aviator-bet-btn-amount">{Number(inputValues.input1).toFixed(2)} {currency}</span>
+                                    <span id="aviator-bet-btn-amount" className="aviator-bet-btn-amount">{formatMoney(inputValues.input1)} {currency}</span>
                                 </>
                             )}
                         </button>
@@ -558,19 +570,23 @@ export default function Bet() {
                                 </div>
                                 <div className="aviator-auto-multiplier-input">
                                     <input
-                                        disabled={!isAutoCashoutInputEnabled || (AutoTradeBetOne && betOnePlaced && betOneStatus === "active" && isflyAway === "false")}
+                                        disabled={isAutoCashoutLocked}
                                         type="text"
+                                        inputMode="decimal"
+                                        pattern="[0-9]*[.]?[0-9]*"
                                         id="aviator-auto-multiplier1"
                                         className="aviator-auto-multiplier"
+                                        onKeyDown={blockInvalidNumberInput}
                                         onChange={(e) => handleCashOutInputChange(e, 'input3')}
+                                        onBlur={() => handleInputBlur('input3', 1.10)}
                                         placeholder="1.10"
-                                        value={Number(inputValues.input3).toFixed(2)}
+                                        value={inputValues.input3}
                                     />
                                     <button
-                                        disabled={!isAutoCashoutInputEnabled || (AutoTradeBetOne && betOnePlaced && betOneStatus === "active" && isflyAway === "false")}
+                                        disabled={isAutoCashoutLocked}
                                         id="clear-input-btn1"
                                         className="aviator-auto-multiplier-clearinput"
-                                        onClick={() => setInputValues((prevValues) => ({ ...prevValues, input3: 0 }))}
+                                        onClick={() => setInputValues((prevValues) => ({ ...prevValues, input3: "" }))}
                                     >
                                         &times;
                                     </button>

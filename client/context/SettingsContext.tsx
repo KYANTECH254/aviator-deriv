@@ -25,18 +25,23 @@ export const useSettings = () => {
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [isMusicEnabled, setIsMusicEnabled] = useState<boolean>(false);
     const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(false);
-    const [isAnimationEnabled, setIsAnimationEnabled] = useState<boolean>(false);
+    const [isAnimationEnabled, setIsAnimationEnabled] = useState<boolean>(true);
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const { eventTriggered } = useUserInteraction();
 
     useEffect(() => {
         const storedSound = JSON.parse(localStorage.getItem('isSoundEnabled') || 'false');
         const storedMusic = JSON.parse(localStorage.getItem('isMusicEnabled') || 'false');
-        const storedAnimation = JSON.parse(localStorage.getItem('isAnimationEnabled') || 'false');
+        const storedAnimationValue = localStorage.getItem('isAnimationEnabled');
+        const storedAnimation = storedAnimationValue === null ? true : JSON.parse(storedAnimationValue);
 
         setIsSoundEnabled(storedSound);
         setIsMusicEnabled(storedMusic);
         setIsAnimationEnabled(storedAnimation);
+
+        if (storedAnimationValue === null) {
+            localStorage.setItem('isAnimationEnabled', JSON.stringify(true));
+        }
 
         if (eventTriggered) {
             if (storedMusic) {
