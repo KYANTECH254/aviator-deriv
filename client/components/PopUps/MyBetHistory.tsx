@@ -18,6 +18,9 @@ interface ActiveAccount {
     code: string;
     derivId: string;
     currency: string;
+    loginid?: string;
+    accountId?: string;
+    appId?: string;
 }
 
 interface MyBetHistoryProps {
@@ -204,4 +207,3 @@ export default function MyBetHistory({
         </div>
     );
 }
-

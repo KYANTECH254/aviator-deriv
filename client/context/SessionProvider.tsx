@@ -29,8 +29,8 @@ type SessionContextType = {
     multiplier: any;
     multipliers: any[];
     AllbetsData: any[];
-    LiveBetsData: any[];
-    UpdatedBetData: any[];
+    LiveBetsData: any;
+    UpdatedBetData: any;
     maxMultiplier: any;
     crashed: string;
     socket: any;
@@ -95,8 +95,8 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     const [multipliers, setMultipliers] = useState([]);
     const [multiplier, setMultiplier] = useState();
     const [AllbetsData, setAllbetsData] = useState([]);
-    const [LiveBetsData, setLiveBetsData] = useState([]);
-    const [UpdatedBetData, setUpdatedBetData] = useState([]);
+    const [LiveBetsData, setLiveBetsData] = useState<any>(null);
+    const [UpdatedBetData, setUpdatedBetData] = useState<any>(null);
     const [maxMultiplier, setMaxMultiplier] = useState(0);
     const [crashed, setCrashed] = useState("");
     const [account, setAccount] = useState<any>();
@@ -131,7 +131,17 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
                     break;
 
                 case "live-bets":
-                    setLiveBetsData(Array.isArray(data) ? data : data?.bets || []);
+                    setLiveBetsData(
+                        Array.isArray(data)
+                            ? {
+                                round_id: null,
+                                bets: data,
+                                totalBetsCount: data.length,
+                                previousRoundBets: [],
+                                totalPreviousBetsCount: 0,
+                            }
+                            : data || null
+                    );
                     break;
 
                 case "bet-updated":

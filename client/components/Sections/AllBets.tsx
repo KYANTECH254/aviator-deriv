@@ -1,6 +1,133 @@
 import { useAlert } from "@/context/AlertContext";
 import { useEffect, useState } from "react";
 
+type BetRecord = {
+    id?: number | string;
+    round_id?: number | string;
+    status?: string;
+    bet_amount?: number | string;
+    profit?: number | string;
+    multiplier?: number | string;
+    avatar?: string;
+    username?: string;
+    code?: string;
+    appId?: string;
+    createdAt?: string;
+    updatedAt?: string;
+};
+
+type LiveBetsPayload = {
+    round_id: number | string | null;
+    bets: BetRecord[];
+    totalBetsCount: number;
+    previousRoundBets: BetRecord[];
+    totalPreviousBetsCount: number;
+};
+
+const DEFAULT_AVATAR = "assets/images/avatar.png";
+
+const toFiniteNumber = (value: any, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const toOptionalNumber = (value: any) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const formatAmount = (value: any) =>
+    toFiniteNumber(value).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+
+const normalizeStatus = (status: any) => String(status || "").toLowerCase();
+
+const getBetKey = (bet: BetRecord) =>
+    bet.id !== undefined && bet.id !== null
+        ? String(bet.id)
+        : `${bet.round_id || ""}:${bet.code || ""}:${bet.appId || ""}`;
+
+const getBetTimestamp = (bet: BetRecord) => {
+    const timestamp = new Date(bet.createdAt || bet.updatedAt || 0).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const sortBetsByNewest = (bets: BetRecord[]) =>
+    [...bets].sort((a, b) => getBetTimestamp(b) - getBetTimestamp(a));
+
+const normalizeLiveBetsPayload = (payload: any): LiveBetsPayload => {
+    if (Array.isArray(payload)) {
+        return {
+            round_id: null,
+            bets: payload,
+            totalBetsCount: payload.length,
+            previousRoundBets: [],
+            totalPreviousBetsCount: 0,
+        };
+    }
+
+    const bets = Array.isArray(payload?.bets) ? payload.bets : [];
+    const previousRoundBets = Array.isArray(payload?.previousRoundBets) ? payload.previousRoundBets : [];
+
+    return {
+        round_id: payload?.round_id ?? null,
+        bets,
+        totalBetsCount: toFiniteNumber(payload?.totalBetsCount, bets.length),
+        previousRoundBets,
+        totalPreviousBetsCount: toFiniteNumber(payload?.totalPreviousBetsCount, previousRoundBets.length),
+    };
+};
+
+const upsertBet = (bets: BetRecord[], updatedBet: BetRecord) => {
+    const updatedBetKey = getBetKey(updatedBet);
+    const existingBetIndex = bets.findIndex((bet) => getBetKey(bet) === updatedBetKey);
+
+    if (existingBetIndex === -1) {
+        return [updatedBet, ...bets];
+    }
+
+    const nextBets = [...bets];
+    nextBets[existingBetIndex] = updatedBet;
+    return nextBets;
+};
+
+const hasRenderableStake = (bet: BetRecord) => {
+    const betAmount = toOptionalNumber(bet.bet_amount);
+    return betAmount !== null && betAmount > 0;
+};
+
+const shouldShowMultiplier = (bet: BetRecord) => {
+    const status = normalizeStatus(bet.status);
+    const multiplier = toOptionalNumber(bet.multiplier);
+    return multiplier !== null && multiplier > 0 && status !== "open" && status !== "cancelled";
+};
+
+const getCashoutAmount = (bet: BetRecord) => {
+    const status = normalizeStatus(bet.status);
+
+    if (status === "lost" || status === "open" || status === "cancelled") {
+        return 0;
+    }
+
+    const betAmount = toFiniteNumber(bet.bet_amount);
+    const profit = toFiniteNumber(bet.profit);
+    return Math.max(betAmount + profit, 0);
+};
+
+const getBetStatusClass = (bet: BetRecord) => {
+    const status = normalizeStatus(bet.status);
+
+    if (status === "won") return "won";
+    if (status === "lost") return "lost";
+    if (status === "sold") return toFiniteNumber(bet.profit) >= 0 ? "won" : "lost";
+    return "";
+};
+
+const getBetItemClassName = (bet: BetRecord) =>
+    ["aviator-bet-item", getBetStatusClass(bet)].filter(Boolean).join(" ");
+
 export default function AllBets({ activeAccount, AllbetsData, Multipliers, socket, LiveBetsData, UpdatedBetData }: any) {
     const [activeTab, setActiveTab] = useState('live-bets');
     const [activeSubTab, setActiveSubTab] = useState('huge-wins');
@@ -32,7 +159,7 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
 
     useEffect(() => {
         function getPreviousRoundIdFromClientData(multipliersData: any) {
-            if (multipliersData.length >= 2) {
+            if (Array.isArray(multipliersData) && multipliersData.length >= 2) {
                 return multipliersData[multipliersData.length - 2].id;
             }
             return null;
@@ -40,71 +167,60 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
 
         const previousRoundId = getPreviousRoundIdFromClientData(Multipliers);
         setPreviousRoundId(previousRoundId);
-    }, [activeRound])
+    }, [activeRound, Multipliers])
 
     useEffect(() => {
+        if (!LiveBetsData) return;
+
         setLoading(true);
 
-        if (LiveBetsData) {
-            const { round_id, bets, totalBetsCount, previousRoundBets, totalPreviousBetsCount } = LiveBetsData;
+        const {
+            round_id,
+            bets,
+            totalBetsCount,
+            previousRoundBets,
+            totalPreviousBetsCount,
+        } = normalizeLiveBetsPayload(LiveBetsData);
 
-            if (Array.isArray(bets)) {
-                const isNewRound = currentRoundId !== round_id;
+        const nextLiveBets = sortBetsByNewest(bets);
+        const nextPreviousBets = sortBetsByNewest(previousRoundBets);
 
-                if (isNewRound) {
-                    // console.log(`New round detected: ${round_id}. Using all data fetched from the database.`);
-
-                    // Set previous round data directly from the database
-                    setPreviousBets(previousRoundBets || []); // Previous bets directly from DB
-                    setPreviousRoundId(previousRoundBets?.length > 0 ? previousRoundBets[0].round_id : ''); // Assume round_id exists in previous bets
-                    setPreviousTotalBets(totalPreviousBetsCount || 0); // Set total count of previous bets
-
-                    // Set the current round data
-                    setLiveBets(bets || []); // Set all bets for the current round
-                    setCurrentRoundId(round_id); // Update current round ID
-                    setTotalBets(totalBetsCount || bets.length); // Update total bets count
-                } else {
-                    // console.log(`Same round detected: ${round_id}. No appending needed.`);
-                    // If the round is the same, assume the data is already complete from the database.
-                    setLiveBets(bets || []);
-                    setTotalBets(totalBetsCount || bets.length);
-                }
-            } else {
-                setLiveBets([]);
-                setTotalBets(0);
-            }
-
-            setLoading(false);
-        }
-    }, [LiveBetsData, activeTab, currentRoundId]);
+        setLiveBets(nextLiveBets);
+        setCurrentRoundId(round_id ? String(round_id) : '');
+        setTotalBets(totalBetsCount || nextLiveBets.length);
+        setPreviousBets(nextPreviousBets);
+        setPreviousRoundId(nextPreviousBets[0]?.round_id ? String(nextPreviousBets[0].round_id) : '');
+        setPreviousTotalBets(totalPreviousBetsCount || nextPreviousBets.length);
+        setLoading(false);
+    }, [LiveBetsData]);
 
     useEffect(() => {
-        if (activeTab === 'live-bets' && UpdatedBetData) {
-            setLiveBets((prevBets) => {
-                if (!Array.isArray(prevBets)) return [UpdatedBetData];
+        if (!UpdatedBetData?.id) return;
 
-                const existingBetIndex = prevBets.findIndex((bet) => bet.id === UpdatedBetData.id);
-                if (existingBetIndex !== -1) {
-                    const updatedBets = [...prevBets];
-                    updatedBets[existingBetIndex] = UpdatedBetData;
-                    return updatedBets;
-                }
+        const updatedRoundId = UpdatedBetData.round_id ? String(UpdatedBetData.round_id) : '';
 
-                return [UpdatedBetData, ...prevBets];
-            });
-
-            setTotalBets((prevTotal) => {
-                if (prevTotal === 0) {
-                    return 0;
-                }
-                return prevTotal + 1;
-            });
+        if (currentRoundId && updatedRoundId && updatedRoundId !== String(currentRoundId)) {
+            return;
         }
-    }, [UpdatedBetData, activeTab]);
+
+        if (!currentRoundId && updatedRoundId) {
+            setCurrentRoundId(updatedRoundId);
+        }
+
+        setLiveBets((prevBets) => sortBetsByNewest(upsertBet(prevBets, UpdatedBetData)));
+    }, [UpdatedBetData, currentRoundId]);
+
+    useEffect(() => {
+        setTotalBets(liveBets.length);
+    }, [liveBets]);
+
+    useEffect(() => {
+        setPreviousTotalBets(previousBets.length);
+    }, [previousBets]);
 
     useEffect(() => {
         if (previousRoundId && Multipliers) {
-            const filteredPreviousMultiplierValue = Multipliers.find((mul: any) =>
+            const filteredPreviousMultiplierValue = (Array.isArray(Multipliers) ? Multipliers : []).find((mul: any) =>
                 String(mul.id) === String(previousRoundId)
             )?.value;
             setPrevMultiplier(filteredPreviousMultiplierValue);
@@ -112,7 +228,7 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
     }, [previousRoundId, Multipliers]);
 
     useEffect(() => {
-        if (AllbetsData && activeAccount) {
+        if (Array.isArray(AllbetsData) && activeAccount) {
             const accountCode = activeAccount.loginid || activeAccount.code || activeAccount.accountId;
             const accountAppId = activeAccount.derivId || activeAccount.appId;
             const filteredBets = AllbetsData.filter((bet: any) =>
@@ -129,11 +245,11 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
         setLoading(true);
         let filtered: any[] = [];
         if (activeSubMiniTab === 'day-bets') {
-            filtered = Multipliers.filter((multiplier: any) => isDailyBet(multiplier.createdAt));
+            filtered = (Array.isArray(Multipliers) ? Multipliers : []).filter((multiplier: any) => isDailyBet(multiplier.createdAt));
         } else if (activeSubMiniTab === 'month-bets') {
-            filtered = Multipliers.filter((multiplier: any) => isMonthlyBet(multiplier.createdAt));
+            filtered = (Array.isArray(Multipliers) ? Multipliers : []).filter((multiplier: any) => isMonthlyBet(multiplier.createdAt));
         } else if (activeSubMiniTab === 'year-bets') {
-            filtered = Multipliers.filter((multiplier: any) => isYearlyBet(multiplier.createdAt));
+            filtered = (Array.isArray(Multipliers) ? Multipliers : []).filter((multiplier: any) => isYearlyBet(multiplier.createdAt));
         }
         setFilteredMultipliers(sortAndLimitMultipliers(filtered));
         setLoading(false);
@@ -170,8 +286,10 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
 
     // Function to determine multiplier size class
     const getMultiplierClass = (multiplier: number) => {
-        if (multiplier < 2) return "small";
-        if (multiplier >= 2 && multiplier < 10) return "medium";
+        const multiplierValue = toFiniteNumber(multiplier, 0);
+        if (multiplierValue <= 0) return "";
+        if (multiplierValue < 2) return "small";
+        if (multiplierValue >= 2 && multiplierValue < 10) return "medium";
         return "large"; // If multiplier >= 10
     };
 
@@ -206,11 +324,12 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
         setLoading(true);
 
         // Filter bets for the active app
-        const appBets = AllbetsData.filter((bet: any) => bet.appId === activeAccount?.derivId);
+        const allBets = Array.isArray(AllbetsData) ? AllbetsData : [];
+        const appBets = allBets.filter((bet: any) => bet.appId === activeAccount?.derivId);
 
         // Add round multiplier from multipliers model
         const betsWithMultiplier = appBets.map((bet: any) => {
-            const roundMultiplier = Multipliers.find((multiplier: any) =>
+            const roundMultiplier = (Array.isArray(Multipliers) ? Multipliers : []).find((multiplier: any) =>
                 multiplier.id.toString() === bet.round_id.toString()
             )?.value;
             return { ...bet, roundMultiplier: roundMultiplier ? parseFloat(roundMultiplier) : 0 };
@@ -251,11 +370,12 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
         setLoading(true);
 
         // Filter bets for the active app
-        const appBets = AllbetsData.filter((bet: any) => bet.appId === activeAccount?.derivId);
+        const allBets = Array.isArray(AllbetsData) ? AllbetsData : [];
+        const appBets = allBets.filter((bet: any) => bet.appId === activeAccount?.derivId);
 
         // Add round multiplier from multipliers model
         const betsWithMultiplier = appBets.map((bet: any) => {
-            const roundMultiplier = Multipliers.find((multiplier: any) =>
+            const roundMultiplier = (Array.isArray(Multipliers) ? Multipliers : []).find((multiplier: any) =>
                 multiplier.id.toString() === bet.round_id.toString()
             )?.value;
             return { ...bet, roundMultiplier: roundMultiplier ? parseFloat(roundMultiplier) : 0 };
@@ -465,43 +585,22 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
                         ) : (
                             liveBets.length > 0 && (
                                 liveBets
-                                    .filter((bet: any) => {
-                                        // Only include bets with valid fields
-                                        return (
-                                            bet.bet_amount &&
-                                            !isNaN(bet.bet_amount) &&
-                                            bet.avatar &&
-                                            bet.username
-                                        );
-                                    })
-                                    .sort((a, b) => b.bet_amount - a.bet_amount)
-                                    .slice(0, 200)
-                                    .map((bet: any, index: number) => {
-                                        const formattedMultiplier = parseFloat(bet.multiplier).toFixed(2);
-                                        const multiplierClass = getMultiplierClass(parseFloat(formattedMultiplier));
-
-                                        // Format bet_amount
-                                        const betAmountFormatted = bet.bet_amount.toLocaleString(undefined, {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                        });
-
-                                        // Format profit
-                                        const profitFormatted = bet.profit;
-
-                                        // Calculate total
-                                        const totalFormatted = (profitFormatted + bet.bet_amount).toLocaleString(undefined, {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                        });
+                                    .filter(hasRenderableStake)
+                                    .sort((a, b) => getBetTimestamp(b) - getBetTimestamp(a))
+                                    .map((bet: BetRecord) => {
+                                        const multiplier = toOptionalNumber(bet.multiplier);
+                                        const formattedMultiplier = multiplier !== null ? multiplier.toFixed(2) : '';
+                                        const multiplierClass = getMultiplierClass(multiplier || 0);
+                                        const betAmountFormatted = formatAmount(bet.bet_amount);
+                                        const totalFormatted = formatAmount(getCashoutAmount(bet));
 
                                         return (
-                                            <div key={index} className="aviator-bets-body">
-                                                <div className={`aviator-bet-item ${bet.status === "won" ? "won" : ""}`}>
+                                            <div key={getBetKey(bet)} className="aviator-bets-body">
+                                                <div className={getBetItemClassName(bet)}>
                                                     <div className="aviator-bets-body-left">
                                                         <img
                                                             className="aviator-bets-avatar"
-                                                            src={bet.avatar || "assets/images/avatar.png"}
+                                                            src={bet.avatar || DEFAULT_AVATAR}
                                                             alt="Avatar"
                                                         />
                                                         <div className="aviator-bets-username">
@@ -512,23 +611,16 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
                                                         <div className="aviator-bets-stake">
                                                             {betAmountFormatted}
                                                         </div>
-                                                        {parseFloat(formattedMultiplier) > 0 && (<>
+                                                        {shouldShowMultiplier(bet) && (<>
                                                             <div className={`aviator-bets-multiplier ${multiplierClass}`}>
                                                                 {formattedMultiplier}x
                                                             </div>
                                                         </>)}
                                                     </div>
                                                     <div className="aviator-bets-body-right">
-                                                        {parseFloat(bet.multiplier) < 1 ? (
-                                                            <div className="aviator-bets-cashout">
-                                                                0
-                                                            </div>
-                                                        ) : (
-                                                            <div className="aviator-bets-cashout">
-                                                                {totalFormatted}
-                                                            </div>
-                                                        )}
-
+                                                        <div className="aviator-bets-cashout">
+                                                            {totalFormatted}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -549,53 +641,33 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
                         ) : (
                             previousBets.length > 0 && (
                                 previousBets
-                                    .filter((bet: any) => {
-                                        // Only include bets with valid fields
-                                        return (
-                                            bet.bet_amount &&
-                                            !isNaN(bet.bet_amount) &&
-                                            bet.avatar &&
-                                            bet.username
-                                        );
-                                    })
-                                    .sort((a: any, b: any) => b.bet_amount - a.bet_amount)
-                                    .map((bet: any, index: number) => {
-                                        const formattedMultiplier = parseFloat(bet.multiplier).toFixed(2);
-                                        const multiplierClass = getMultiplierClass(parseFloat(formattedMultiplier));
-
-                                        // Format bet_amount
-                                        const betAmountFormatted = bet.bet_amount.toLocaleString(undefined, {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                        });
-
-                                        // Format profit
-                                        const profitFormatted = bet.profit;
-
-                                        // Calculate total
-                                        const totalFormatted = (profitFormatted + bet.bet_amount).toLocaleString(undefined, {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                        });
+                                    .filter(hasRenderableStake)
+                                    .sort((a: any, b: any) => getBetTimestamp(b) - getBetTimestamp(a))
+                                    .map((bet: BetRecord) => {
+                                        const multiplier = toOptionalNumber(bet.multiplier);
+                                        const formattedMultiplier = multiplier !== null ? multiplier.toFixed(2) : '';
+                                        const multiplierClass = getMultiplierClass(multiplier || 0);
+                                        const betAmountFormatted = formatAmount(bet.bet_amount);
+                                        const totalFormatted = formatAmount(getCashoutAmount(bet));
 
                                         return (
-                                            <div key={index} className="aviator-bets-body"> {/* Using index as key */}
-                                                <div className={`aviator-bet-item ${bet.status === "won" ? "won" : ""}`}>
+                                            <div key={getBetKey(bet)} className="aviator-bets-body">
+                                                <div className={getBetItemClassName(bet)}>
                                                     <div className="aviator-bets-body-left">
                                                         <img
                                                             className="aviator-bets-avatar"
-                                                            src={bet.avatar || "assets/images/avatar.png"} // Fallback to a default avatar if missing
+                                                            src={bet.avatar || DEFAULT_AVATAR}
                                                             alt="Avatar"
                                                         />
                                                         <div className="aviator-bets-username">
-                                                            {bet.username || "2***6"} {/* Fallback to a default username */}
+                                                            {bet.username || "2***6"}
                                                         </div>
                                                     </div>
                                                     <div className="aviator-bets-body-middle">
                                                         <div className="aviator-bets-stake">
                                                             {betAmountFormatted}
                                                         </div>
-                                                        {parseFloat(formattedMultiplier) > 0 && (<>
+                                                        {shouldShowMultiplier(bet) && (<>
                                                             <div className={`aviator-bets-multiplier ${multiplierClass}`}>
                                                                 {formattedMultiplier}x
                                                             </div>
@@ -628,19 +700,20 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
                                 .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                                 .slice(0, 1000)
                                 .map((bet: any) => {
-                                    const formattedMultiplier = parseFloat(bet.multiplier).toFixed(2);
-                                    const multiplierClass = getMultiplierClass(parseFloat(formattedMultiplier));
+                                    const multiplier = toOptionalNumber(bet.multiplier);
+                                    const formattedMultiplier = multiplier !== null ? multiplier.toFixed(2) : '';
+                                    const multiplierClass = getMultiplierClass(multiplier || 0);
 
                                     return (
                                         <div key={bet.id} className="aviator-bets-body">
-                                            <div className={`aviator-bet-item ${bet.status === "won" ? "won" : ""}`}>
+                                            <div className={getBetItemClassName(bet)}>
                                                 <div className="aviator-bets-body-left-date">
                                                     <div className="aviator-bets-datetime">{new Date(bet.createdAt).toLocaleTimeString()}</div>
                                                     <div className="aviator-bets-date">{new Date(bet.createdAt).toLocaleDateString()}</div>
                                                 </div>
                                                 <div className="aviator-bets-body-middle">
-                                                    <div className="aviator-bets-stake">{(bet.bet_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                    {parseFloat(formattedMultiplier) > 1 && bet.status !== "open" && (
+                                                    <div className="aviator-bets-stake">{formatAmount(bet.bet_amount)}</div>
+                                                    {shouldShowMultiplier(bet) && (
                                                         <>
                                                             <div className={`aviator-bets-multiplier ${multiplierClass}`}>{formattedMultiplier}x</div>
                                                         </>
@@ -648,7 +721,7 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
 
                                                 </div>
                                                 <div className="aviator-bets-body-right">
-                                                    <div className="aviator-bets-cashout">{(bet.profit + bet.bet_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                    <div className="aviator-bets-cashout">{formatAmount(getCashoutAmount(bet))}</div>
                                                     <div className="aviator-bets-btns" onClick={() => handleCopyBetId(bet.id)}>
                                                         <i className="fa fa-comment-o" aria-hidden="true"></i>
                                                     </div>

@@ -49,7 +49,7 @@ const authenticateUser = async (socket, authToken) => {
     }
 };
 
-const fetchLiveBets = async (socket) => {
+const fetchLiveBets = async (emitter) => {
     try {
         const latestMultiplier = await prisma.multiplier.findFirst({
             orderBy: { id: 'desc' },
@@ -57,7 +57,7 @@ const fetchLiveBets = async (socket) => {
 
         if (!latestMultiplier) {
             console.log('No multiplier found.');
-            socket.emit('live-bets', {
+            emitter.emit('live-bets', {
                 round_id: null,
                 bets: [],
                 totalBetsCount: 0,
@@ -69,7 +69,7 @@ const fetchLiveBets = async (socket) => {
         // Fetch live bets for the latest round
         const liveBets = await prisma.bet.findMany({
             where: { round_id: latestMultiplier.id.toString() },
-            orderBy: { bet_amount: 'desc' },
+            orderBy: { createdAt: 'desc' },
         });
 
         // Calculate the total number of bets for the latest round
@@ -85,7 +85,7 @@ const fetchLiveBets = async (socket) => {
         const previousRoundBets = previousRoundMultiplier
             ? await prisma.bet.findMany({
                 where: { round_id: previousRoundMultiplier.id.toString() },
-                orderBy: { bet_amount: 'desc' },
+                orderBy: { createdAt: 'desc' },
             })
             : [];
 
@@ -93,7 +93,7 @@ const fetchLiveBets = async (socket) => {
         const totalPreviousBetsCount = previousRoundBets.length;
 
         // Emit live bets data
-        socket.emit('live-bets', {
+        emitter.emit('live-bets', {
             round_id: latestMultiplier.id.toString(),
             bets: liveBets,
             totalBetsCount,
@@ -103,7 +103,7 @@ const fetchLiveBets = async (socket) => {
 
     } catch (error) {
         console.error('Error fetching round data:', error);
-        socket.emit('live-bets', {
+        emitter.emit('live-bets', {
             round_id: null,
             bets: [],
             totalBetsCount: 0,
@@ -113,44 +113,55 @@ const fetchLiveBets = async (socket) => {
     }
 };
 
-const placeBet = async (socket) => {
+const placeBet = async (socket, io) => {
     socket.on('new-bet', async (bet) => {
         try {
             if (bet === "") return;
             const { round_id, code, appId } = bet;
 
-            const existingbet = await prisma.bet.findFirst({
-                where: {
-                    round_id: round_id,
-                    code: code,
-                    appId: appId,
-                },
-            });
-
-            if (existingbet) {
-                const updatedexistingbet = await prisma.bet.update({
-                    where: {
-                        id: existingbet.id,
-                    },
-                    data: bet,
-                });
-                socket.emit('bet-updated', updatedexistingbet);
-                emitAllBetsData(socket)
-                fetchLiveBets(socket);
-                return;
-            } else {
-                const createdBet = await prisma.bet.create({
-                    data: bet,
-                });
-
-                socket.emit('bet-updated', createdBet);
-                emitAllBetsData(socket)
-                fetchLiveBets(socket);
+            if (!round_id || !code || !appId) {
+                socket.emit('error', 'Bet data is missing required round or account fields');
                 return;
             }
 
+            const normalizedBet = {
+                ...bet,
+                round_id: String(round_id),
+                code: String(code),
+                appId: String(appId),
+            };
+
+            const existingbet = await prisma.bet.findFirst({
+                where: {
+                    round_id: normalizedBet.round_id,
+                    code: normalizedBet.code,
+                    appId: normalizedBet.appId,
+                },
+            });
+
+            let savedBet;
+
+            if (existingbet) {
+                savedBet = await prisma.bet.update({
+                    where: {
+                        id: existingbet.id,
+                    },
+                    data: normalizedBet,
+                });
+            } else {
+                savedBet = await prisma.bet.create({
+                    data: normalizedBet,
+                });
+            }
+
+            io.emit('bet-updated', savedBet);
+            await emitAllBetsData(io);
+            await fetchLiveBets(io);
+            return;
+
         } catch (error) {
             console.error('Error creating new bet:', error);
+            socket.emit('error', 'Failed to save bet');
         }
     });
 }
@@ -183,10 +194,12 @@ const emitMultiplierData = async (socket) => {
     }
 };
 
-const emitAllBetsData = async (socket) => {
+const emitAllBetsData = async (emitter) => {
     try {
-        const bets = await prisma.bet.findMany();
-        socket.emit('bets_data', bets);
+        const bets = await prisma.bet.findMany({
+            orderBy: { createdAt: 'desc' },
+        });
+        emitter.emit('bets_data', bets);
     } catch (error) {
         console.error('Error fetching or emitting bets:', error);
     }
@@ -404,7 +417,7 @@ const initSocketServer = (httpServer) => {
                 return;
             }
             await emitUserDataByToken(socket, authToken);
-            await placeBet(socket);
+            await placeBet(socket, io);
             handleChat(socket, authToken);
             initFrontendSocketServer(socket);
             await initFunctionsOnLiveData(socket);
