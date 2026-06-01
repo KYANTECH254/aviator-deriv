@@ -59,8 +59,8 @@ function FlightAnimation({ flying, flewAway }: FlightAnimationProps) {
 
         if (!path || !fill || !plane) return;
 
-        const tailDistance = 62;
-        const tailOffsetY = 26;
+        const tailDistance = 48;
+        const tailOffsetY = 28;
 
         const clearFrame = () => {
             if (frameRef.current !== null) {
