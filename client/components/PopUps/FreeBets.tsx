@@ -4,43 +4,17 @@ import useStoredAccounts from "@/hooks/useStoredAccounts";
 import { DeleteCookie, SetCookie } from "@/lib/Functions";
 import { useEffect, useRef, useState } from "react";
 
+const getAccountLoginId = (account: any) =>
+    account?.loginid || account?.login_id || account?.code || account?.accountId || account?.account_id || "";
+
 export default function FreeBets({ onClose, onToggleActiveAccount }: any) {
     const popupRef = useRef<HTMLDivElement>(null);
     const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
     const { activeAccount, storedAccounts, toggleActiveAccount } = useStoredAccounts()
-    const activeAccountRef = useRef(activeAccount)
 
     useEffect(() => {
-        activeAccountRef.current = activeAccount      
-    }, [activeAccount])
-
-    const safeJSONParse = (value: string | null, fallback: any) => {
-        if (!value || value === 'undefined' || value === 'null') return fallback;
-        try {
-            return JSON.parse(value);
-        } catch {
-            return fallback;
-        }
-    };
-
-    useEffect(() => {
-        const storedAccounts = sessionStorage.getItem("accounts");
-        const storedActiveAccount = sessionStorage.getItem("activeAccount");
-
-        const parsedActive = safeJSONParse(storedActiveAccount, null);
-        if (parsedActive) {
-            setSelectedAccount(parsedActive.code);
-            toggleActiveAccount(parsedActive);
-        }
-
-        const parsedAccounts = safeJSONParse(storedAccounts, []);
-        if (Array.isArray(parsedAccounts) && parsedAccounts.length > 0) {
-            setSelectedAccount(activeAccountRef.current?.code || parsedAccounts[0].code);
-        } else {
-            setSelectedAccount(null);
-        }
-
-    }, [selectedAccount]);
+        setSelectedAccount(getAccountLoginId(activeAccount) || getAccountLoginId(storedAccounts[0]) || null);
+    }, [activeAccount, storedAccounts]);
 
     const handleOutsideClick = (event: any) => {
         if (popupRef.current && !popupRef.current.contains(event.target)) {
@@ -56,11 +30,15 @@ export default function FreeBets({ onClose, onToggleActiveAccount }: any) {
     }, []);
 
     const handleAccountClick = (account: any) => {
-        setSelectedAccount(account.code);
+        setSelectedAccount(getAccountLoginId(account));
         toggleActiveAccount(account)
         onToggleActiveAccount(account)
-        if (DeleteCookie("token")) {
-            SetCookie(account.authToken)
+
+        const token = account.authToken || account.token;
+
+        if (token) {
+            DeleteCookie("token");
+            SetCookie(token)
         }
     };
 
@@ -83,13 +61,13 @@ export default function FreeBets({ onClose, onToggleActiveAccount }: any) {
                             ) : (
                                 storedAccounts.map((account) => {
                                     const tokenShort = account.token?.slice(0, 8).toUpperCase();
-                                    const loginId = account.loginid || tokenShort || account.code || account.accountId || "Unknown";
+                                    const loginId = getAccountLoginId(account) || tokenShort || "Unknown";
                                     const accountKey = account.loginid || account.code || account.accountId || tokenShort || loginId;
 
                                     return (
                                         <div
                                             key={accountKey}
-                                            className={`aviator-popup-accounts-box display-center ${selectedAccount === account.code ? "selected" : ""}`}
+                                            className={`aviator-popup-accounts-box display-center ${selectedAccount === loginId ? "selected" : ""}`}
                                             onClick={() => handleAccountClick(account)}
                                         >
                                             <div className="account-details">

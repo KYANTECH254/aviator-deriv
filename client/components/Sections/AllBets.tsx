@@ -12,6 +12,7 @@ type BetRecord = {
     username?: string;
     code?: string;
     appId?: string;
+    currency?: string;
     createdAt?: string;
     updatedAt?: string;
 };
@@ -25,6 +26,7 @@ type LiveBetsPayload = {
 };
 
 const DEFAULT_AVATAR = "assets/images/avatar.png";
+const PREVIOUS_ROUND_BET_LIMIT = 50;
 
 const toFiniteNumber = (value: any, fallback = 0) => {
     const parsed = Number(value);
@@ -43,11 +45,20 @@ const formatAmount = (value: any) =>
     });
 
 const normalizeStatus = (status: any) => String(status || "").toLowerCase();
+const FINAL_STATUSES = new Set(["won", "lost", "sold", "cancelled"]);
 
 const getBetKey = (bet: BetRecord) =>
     bet.round_id && bet.code && bet.appId
         ? `${bet.round_id}:${bet.code}:${bet.appId}`
         : String(bet.id || "");
+
+const getBetLifecycleKey = (bet: BetRecord) =>
+    [
+        bet.code || "",
+        bet.appId || "",
+        bet.currency || "",
+        String(bet.bet_amount || ""),
+    ].join(":");
 
 const getBetTimestamp = (bet: BetRecord) => {
     const timestamp = new Date(bet.updatedAt || bet.createdAt || 0).getTime();
@@ -70,6 +81,31 @@ const dedupeBetsByTrade = (bets: BetRecord[]) => {
 
     return Array.from(byTrade.values());
 };
+
+const dedupeResolvedOpenBets = (bets: BetRecord[]) => {
+    const finalTrades = new Set<string>();
+    const nextBets: BetRecord[] = [];
+
+    sortBetsByNewest(dedupeBetsByTrade(bets)).forEach((bet) => {
+        const status = normalizeStatus(bet.status);
+        const lifecycleKey = getBetLifecycleKey(bet);
+
+        if (!FINAL_STATUSES.has(status) && finalTrades.has(lifecycleKey)) {
+            return;
+        }
+
+        nextBets.push(bet);
+
+        if (FINAL_STATUSES.has(status)) {
+            finalTrades.add(lifecycleKey);
+        }
+    });
+
+    return nextBets;
+};
+
+const limitPreviousRoundBets = (bets: BetRecord[]) =>
+    sortBetsByNewest(dedupeResolvedOpenBets(bets)).slice(0, PREVIOUS_ROUND_BET_LIMIT);
 
 const isOlderRound = (nextRoundId: any, currentRoundId: any) => {
     if (!nextRoundId || !currentRoundId) return false;
@@ -191,12 +227,12 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
                 }
 
                 setLiveBets((currentBets) => {
-                    const previousRoundBets = dedupeBetsByTrade(currentBets);
+                    const previousRoundBets = limitPreviousRoundBets(currentBets);
 
                     if (previousRoundBets.length > 0) {
                         setPreviousBets(previousRoundBets);
                         setPreviousRoundId(previousRoundBets[0]?.round_id ? String(previousRoundBets[0].round_id) : String(previousRoundId || ''));
-                        setPreviousTotalBets(previousRoundBets.length);
+                        setPreviousTotalBets(Math.min(previousRoundBets.length, PREVIOUS_ROUND_BET_LIMIT));
                     }
 
                     return [];
@@ -225,15 +261,29 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
 
     useEffect(() => {
         function getPreviousRoundIdFromClientData(multipliersData: any) {
-            if (Array.isArray(multipliersData) && multipliersData.length >= 2) {
-                return multipliersData[multipliersData.length - 2].id;
+            if (!Array.isArray(multipliersData) || multipliersData.length < 2) {
+                return null;
             }
-            return null;
+
+            const sortedMultipliers = [...multipliersData].sort(
+                (a: any, b: any) => toFiniteNumber(a.id) - toFiniteNumber(b.id)
+            );
+            const currentRoundIndex = currentRoundId
+                ? sortedMultipliers.findIndex((multiplier: any) => String(multiplier.id) === String(currentRoundId))
+                : -1;
+
+            if (currentRoundIndex > 0) {
+                return sortedMultipliers[currentRoundIndex - 1].id;
+            }
+
+            return sortedMultipliers[sortedMultipliers.length - 2]?.id || null;
         }
 
         const previousRoundId = getPreviousRoundIdFromClientData(Multipliers);
-        setPreviousRoundId(previousRoundId);
-    }, [activeRound, Multipliers])
+        if (previousRoundId) {
+            setPreviousRoundId(previousRoundId);
+        }
+    }, [activeRound, currentRoundId, Multipliers])
 
     useEffect(() => {
         if (!LiveBetsData) return;
@@ -254,16 +304,29 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
         }
 
         const nextLiveBets = dedupeBetsByTrade(bets);
-        const nextPreviousBets = dedupeBetsByTrade(previousRoundBets);
+        const nextPreviousBets = limitPreviousRoundBets(previousRoundBets);
 
         setLiveBets(nextLiveBets);
         setCurrentRoundId(round_id ? String(round_id) : '');
         setTotalBets(totalBetsCount || nextLiveBets.length);
         setPreviousBets(nextPreviousBets);
         setPreviousRoundId(nextPreviousBets[0]?.round_id ? String(nextPreviousBets[0].round_id) : '');
-        setPreviousTotalBets(totalPreviousBetsCount || nextPreviousBets.length);
+        setPreviousTotalBets(Math.min(totalPreviousBetsCount || nextPreviousBets.length, PREVIOUS_ROUND_BET_LIMIT));
         setLoading(false);
     }, [LiveBetsData, currentRoundId]);
+
+    useEffect(() => {
+        if (!previousRoundId || !Array.isArray(AllbetsData)) return;
+
+        const fallbackPreviousBets = limitPreviousRoundBets(
+            AllbetsData.filter((bet: BetRecord) => String(bet.round_id) === String(previousRoundId))
+        );
+
+        if (fallbackPreviousBets.length === 0) return;
+
+        setPreviousBets(fallbackPreviousBets);
+        setPreviousTotalBets(fallbackPreviousBets.length);
+    }, [AllbetsData, previousRoundId]);
 
     useEffect(() => {
         if (!UpdatedBetData?.id) return;
@@ -302,7 +365,7 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
         if (Array.isArray(AllbetsData) && activeAccount) {
             const accountCode = activeAccount.loginid || activeAccount.code || activeAccount.accountId;
             const accountAppId = activeAccount.derivId || activeAccount.appId;
-            const filteredBets = dedupeBetsByTrade(AllbetsData.filter((bet: any) =>
+            const filteredBets = dedupeResolvedOpenBets(AllbetsData.filter((bet: any) =>
                 (bet.code === accountCode || bet.code === activeAccount.code) &&
                 bet.appId === accountAppId
             ));
@@ -489,6 +552,11 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
             addAlert('Failed to copy!', 3000, 'red', 1, false);
         });
     };
+
+    const visiblePreviousBets = previousBets
+        .filter(hasRenderableStake)
+        .sort((a: any, b: any) => getBetTimestamp(b) - getBetTimestamp(a))
+        .slice(0, PREVIOUS_ROUND_BET_LIMIT);
 
 
     return (
@@ -710,10 +778,8 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
                                 <div className="popup-loader"></div> {/* Loader for visual feedback */}
                             </div>
                         ) : (
-                            previousBets.length > 0 && (
-                                previousBets
-                                    .filter(hasRenderableStake)
-                                    .sort((a: any, b: any) => getBetTimestamp(b) - getBetTimestamp(a))
+                            visiblePreviousBets.length > 0 && (
+                                visiblePreviousBets
                                     .map((bet: BetRecord) => {
                                         const multiplier = toOptionalNumber(bet.multiplier);
                                         const formattedMultiplier = multiplier !== null ? multiplier.toFixed(2) : '';

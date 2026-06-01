@@ -10,6 +10,8 @@ const PRICE_CHANGE_THRESHOLD = Number(process.env.PRICE_CHANGE_THRESHOLD || 0.04
 const DISPLAY_INTERVAL_MS = Number(process.env.DISPLAY_INTERVAL_MS || 50);
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
+const RECOVERABLE_DERIV_ERROR_CODES = new Set(['WrongResponse']);
+const FATAL_DERIV_ERROR_CODES = new Set(['InvalidToken', 'AuthorizationRequired']);
 
 const KEYS = {
   crashed: 'multiplierCrashed',
@@ -55,7 +57,10 @@ function emit(io, event, payload) {
 function sendJson(ws, payload) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(payload));
+    return true;
   }
+
+  return false;
 }
 
 function initializeDerivWebSocket(io) {
@@ -70,6 +75,9 @@ function initializeDerivWebSocket(io) {
   let lastEmittedMultiplier = '';
   let isHandlingCrash = false;
   let isWritingDisplay = false;
+  let hasAuthorized = false;
+  let hasSubscribed = false;
+  let isRecovering = false;
   let stopped = false;
 
   async function persistRound(multiplier) {
@@ -261,6 +269,8 @@ function initializeDerivWebSocket(io) {
       return;
     }
 
+    reconnectAttempt = 0;
+
     const newPrice = parseNumber(message.tick.quote);
 
     if (!newPrice || newPrice <= 0) {
@@ -327,17 +337,29 @@ function initializeDerivWebSocket(io) {
     }
 
     if (message.error) {
-      console.error('Deriv API error:', message.error);
+      handleDerivApiError(message);
       return;
     }
 
     if (message.msg_type === 'authorize') {
+      hasAuthorized = true;
       console.log('Deriv authorization successful');
+
+      if (!subscribeToTicks()) {
+        recoverConnection('Unable to subscribe to Deriv ticks after authorization');
+      }
+
       return;
     }
 
     if (message.msg_type === 'tick') {
+      hasSubscribed = true;
       await handleTick(message);
+      return;
+    }
+
+    if (message.msg_type === 'ping') {
+      return;
     }
   }
 
@@ -363,24 +385,111 @@ function initializeDerivWebSocket(io) {
     }, delay);
   }
 
+  function subscribeToTicks() {
+    if (hasSubscribed) {
+      return true;
+    }
+
+    return sendJson(ws, {
+      subscribe: 1,
+      ticks: DERIV_SYMBOL,
+    });
+  }
+
+  function recoverConnection(reason) {
+    if (stopped || isRecovering) {
+      return;
+    }
+
+    isRecovering = true;
+    hasAuthorized = false;
+    hasSubscribed = false;
+
+    console.warn('Recovering Deriv WebSocket connection:', reason);
+    emit(io, 'deriv_connection_status', {
+      status: 'recovering',
+      reason,
+    });
+
+    stopDisplay();
+    clearPing();
+
+    resetRoundState().catch((error) => {
+      console.error('Failed to reset round state during Deriv recovery:', error);
+    });
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.close(1011, 'Recovering from Deriv API error');
+      return;
+    }
+
+    if (ws && ws.readyState === WebSocket.CONNECTING) {
+      ws.terminate();
+      return;
+    }
+
+    scheduleReconnect();
+  }
+
+  function handleDerivApiError(message) {
+    const error = message.error || {};
+    const code = error.code || 'Unknown';
+    const errorMessage = error.message || 'Unknown Deriv API error';
+    const request = message.echo_req || {};
+
+    console.error('Deriv API error:', {
+      code,
+      message: errorMessage,
+      request,
+    });
+
+    emit(io, 'deriv_connection_status', {
+      status: 'error',
+      code,
+      message: errorMessage,
+    });
+
+    if (FATAL_DERIV_ERROR_CODES.has(code)) {
+      stopped = true;
+      stopDisplay();
+      clearPing();
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close(1008, 'Fatal Deriv API error');
+      } else if (ws && ws.readyState === WebSocket.CONNECTING) {
+        ws.terminate();
+      }
+
+      console.error('Deriv WebSocket stopped because the API returned a fatal error.');
+      return;
+    }
+
+    if (RECOVERABLE_DERIV_ERROR_CODES.has(code)) {
+      recoverConnection(`${code}: ${errorMessage}`);
+    }
+  }
+
   function connect() {
     clearPing();
+    hasAuthorized = false;
+    hasSubscribed = false;
+    isRecovering = false;
 
     ws = new WebSocket(`${SOCKET_URL}?app_id=${DERIV_ID}`);
 
     ws.on('open', () => {
-      reconnectAttempt = 0;
-
       console.log('Connected to Deriv WebSocket API');
 
-      sendJson(ws, {
-        authorize: TOKEN,
+      emit(io, 'deriv_connection_status', {
+        status: 'connected',
       });
 
-      sendJson(ws, {
-        subscribe: 1,
-        ticks: DERIV_SYMBOL,
-      });
+      if (!sendJson(ws, {
+        authorize: TOKEN,
+      })) {
+        recoverConnection('Unable to send Deriv authorize request');
+        return;
+      }
 
       resetRoundState().catch((error) => {
         console.error('Failed to reset round state:', error);
@@ -399,11 +508,18 @@ function initializeDerivWebSocket(io) {
 
     ws.on('error', (error) => {
       console.error('Deriv WebSocket error:', error);
+      emit(io, 'deriv_connection_status', {
+        status: 'error',
+        message: error.message,
+      });
     });
 
     ws.on('close', () => {
       stopDisplay();
       clearPing();
+      hasAuthorized = false;
+      hasSubscribed = false;
+      isRecovering = false;
       scheduleReconnect();
     });
   }

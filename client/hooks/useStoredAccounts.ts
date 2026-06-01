@@ -37,12 +37,20 @@ export default function useStoredAccounts() {
         }
     };
 
-    const setDerivAccounts = (accounts: any) => {
-        const newAccounts = accounts || [];
-        setStoredAccounts(newAccounts);
-        if (typeof window !== 'undefined') {
-            sessionStorage.setItem('accounts', JSON.stringify(newAccounts));
-        }
+    const setDerivAccounts = (accountsOrUpdater: any) => {
+        setStoredAccounts((currentAccounts) => {
+            const nextAccounts =
+                typeof accountsOrUpdater === 'function'
+                    ? accountsOrUpdater(currentAccounts)
+                    : accountsOrUpdater;
+            const normalizedAccounts = Array.isArray(nextAccounts) ? nextAccounts : [];
+
+            if (typeof window !== 'undefined') {
+                sessionStorage.setItem('accounts', JSON.stringify(normalizedAccounts));
+            }
+
+            return normalizedAccounts;
+        });
     };
 
     return {

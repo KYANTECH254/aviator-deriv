@@ -4,6 +4,7 @@ import { useGetQueryParams } from "./useGetQueryParams"
 
 export type AccountsT = {
   code: string
+  loginid: string
   token: string
   isLive: boolean
   currency: string
@@ -17,8 +18,11 @@ export const useDerivAccount = (): AccountsT[] => {
 
   let i = 1;
   while (derivAccounts[`acct${i}`]) {
+    const loginid = derivAccounts[`acct${i}`];
+
     myDerivAccounts.push({
-      code: derivAccounts[`acct${i}`],
+      code: loginid,
+      loginid,
       token: derivAccounts[`token${i}`],
       isLive: false, 
       currency: derivAccounts[`cur${i}`],
@@ -30,5 +34,4 @@ export const useDerivAccount = (): AccountsT[] => {
 
   return myDerivAccounts;
 }
-
 

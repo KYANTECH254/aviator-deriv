@@ -7,6 +7,9 @@ const fs = require('fs');
 const redisClient = require('../../config/redisConfig');
 
 let userCount = 0;
+const FINAL_BET_STATUSES = new Set(['won', 'lost', 'cancelled']);
+const OPEN_BET_STATUSES = ['open', 'pending', 'active'];
+const PREVIOUS_ROUND_BET_LIMIT = 50;
 
 // async function deleteAllFromModel() {
 //     try {
@@ -86,7 +89,8 @@ const fetchLiveBets = async (emitter) => {
             ? dedupeBetsByTrade(await prisma.bet.findMany({
                 where: { round_id: previousRoundMultiplier.id.toString() },
                 orderBy: { createdAt: 'desc' },
-            }))
+                take: PREVIOUS_ROUND_BET_LIMIT,
+            })).slice(0, PREVIOUS_ROUND_BET_LIMIT)
             : [];
 
         // Calculate the total number of bets for the previous round
@@ -129,9 +133,11 @@ const placeBet = async (socket, io) => {
                 round_id: String(round_id),
                 code: String(code),
                 appId: String(appId),
+                status: String(bet.status || '').toLowerCase(),
             };
+            const isFinalStatus = FINAL_BET_STATUSES.has(normalizedBet.status);
 
-            const existingBets = await prisma.bet.findMany({
+            let existingBets = await prisma.bet.findMany({
                 where: {
                     round_id: normalizedBet.round_id,
                     code: normalizedBet.code,
@@ -139,7 +145,24 @@ const placeBet = async (socket, io) => {
                 },
                 orderBy: { updatedAt: 'desc' },
             });
-            const existingbet = existingBets[0];
+            let existingbet = existingBets[0];
+
+            if (!existingbet && isFinalStatus) {
+                existingBets = await prisma.bet.findMany({
+                    where: {
+                        code: normalizedBet.code,
+                        appId: normalizedBet.appId,
+                        status: { in: OPEN_BET_STATUSES },
+                    },
+                    orderBy: { updatedAt: 'desc' },
+                    take: 1,
+                });
+                existingbet = existingBets[0];
+
+                if (existingbet) {
+                    normalizedBet.round_id = existingbet.round_id;
+                }
+            }
 
             let savedBet;
 
@@ -167,6 +190,15 @@ const placeBet = async (socket, io) => {
                     },
                 });
             }
+
+            await prisma.bet.deleteMany({
+                where: {
+                    round_id: savedBet.round_id,
+                    code: savedBet.code,
+                    appId: savedBet.appId,
+                    id: { not: savedBet.id },
+                },
+            });
 
             io.emit('bet-updated', savedBet);
             await emitAllBetsData(io);

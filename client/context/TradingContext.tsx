@@ -108,6 +108,7 @@ export const TradingProvider = ({
   const cashoutRequestKeyRef = useRef("")
   const accountSubscriptionKeyRef = useRef("")
   const finalizedContractKeyRef = useRef("")
+  const activeTradeRoundIdRef = useRef<number | string | undefined>()
 
   useEffect(() => {
     accountRef.current = account
@@ -161,7 +162,10 @@ export const TradingProvider = ({
   const createBetData = useCallback(
     (status: string, multiplier: string | number = "", profit = 0) => {
       const currentAccount = accountRef.current
-      const roundId = RoundIDRef.current
+      const normalizedStatus = String(status || "").toLowerCase()
+      const roundId = normalizedStatus === "open"
+        ? RoundIDRef.current
+        : activeTradeRoundIdRef.current ?? RoundIDRef.current
 
       if (!currentAccount || roundId === undefined || roundId === null) {
         return null
@@ -209,6 +213,8 @@ export const TradingProvider = ({
           emitBetData(cancelledBet)
         }
       }
+
+      activeTradeRoundIdRef.current = undefined
     },
     [createBetData, emitBetData]
   )
@@ -238,6 +244,7 @@ export const TradingProvider = ({
     const betdata = createBetData("open", "", 0)
     if (!betdata) return
 
+    activeTradeRoundIdRef.current = RoundID
     openBetAnnouncementKeyRef.current = announcementKey
     emitBetData(betdata)
   }, [RoundID, betOnePlaced, betOneStatus, createBetData, emitBetData, runningTrades, stakeForbetOne])
@@ -248,6 +255,7 @@ export const TradingProvider = ({
     const currentAccount = accountRef.current
     const stake = trimToTwoDecimals(toFiniteNumber(stakeForbetOne))
     const balance = toFiniteNumber(currentAccount?.balance, Number.NaN)
+    const tradeRoundId = RoundID
 
     if (!currentAccount || !Number.isFinite(balance)) {
       failTrade("Account is still syncing. Please try again.", false)
@@ -264,7 +272,7 @@ export const TradingProvider = ({
       return
     }
 
-    const proposalKey = `${RoundID}:${stake}:${takeProfitForBetOne}:${symbol}`
+    const proposalKey = `${tradeRoundId}:${stake}:${takeProfitForBetOne}:${symbol}`
     if (proposalRequestKeyRef.current === proposalKey) return
 
     const proposal: any = {
@@ -284,6 +292,7 @@ export const TradingProvider = ({
     }
 
     proposalRequestKeyRef.current = proposalKey
+    activeTradeRoundIdRef.current = tradeRoundId
 
     if (sendMsg(proposal)) {
       setRunningTrades(1)
@@ -291,6 +300,7 @@ export const TradingProvider = ({
     }
 
     proposalRequestKeyRef.current = ""
+    activeTradeRoundIdRef.current = undefined
     failTrade("Trading connection is not ready. Please try again.", false)
   }, [
     RoundID,
@@ -354,6 +364,7 @@ export const TradingProvider = ({
       setCashoutX(cashout)
 
       if (status === "open" && !isClosed) {
+        activeTradeRoundIdRef.current = activeTradeRoundIdRef.current ?? RoundIDRef.current
         setCashOutBetOne(false)
         setbetOnePlaced(true)
         setContractId(contractId || undefined)
@@ -387,6 +398,8 @@ export const TradingProvider = ({
       if (betdata) {
         emitBetData(betdata)
       }
+
+      activeTradeRoundIdRef.current = undefined
     },
     [createBetData, emitBetData]
   )
@@ -433,6 +446,7 @@ export const TradingProvider = ({
           setRunningTrades(1)
           setbetOneStatus("active")
           setWonAmount(0)
+          activeTradeRoundIdRef.current = activeTradeRoundIdRef.current ?? RoundIDRef.current
           sendMsg({ proposal_open_contract: 1, contract_id: buy.contract_id, subscribe: 1 })
         } else {
           failTrade("Stage timed out")
@@ -475,6 +489,8 @@ export const TradingProvider = ({
           if (betdata) {
             emitBetData(betdata)
           }
+
+          activeTradeRoundIdRef.current = undefined
         }
         break
       }
@@ -497,6 +513,9 @@ export const TradingProvider = ({
 
     proposalRequestKeyRef.current = ""
     openBetAnnouncementKeyRef.current = ""
+    if (!betOnePlaced) {
+      activeTradeRoundIdRef.current = undefined
+    }
   }, [betOnePlaced, betOneStatus])
 
   const value = {

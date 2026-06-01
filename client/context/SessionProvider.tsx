@@ -60,13 +60,85 @@ export const useSession = () => {
     return context;
 };
 
-const buildSessionAccount = (activeAccount: any, accounts: any[]) => ({
-    balance: activeAccount?.balance ?? 0,
-    currency: activeAccount?.currency,
-    loginid: activeAccount?.loginid || activeAccount?.code || activeAccount?.accountId,
-    is_virtual: activeAccount?.isVirtual ?? !activeAccount?.isLive,
-    account_list: accounts,
-});
+const getAccountLoginId = (account: any) =>
+    account?.loginid || account?.login_id || account?.code || account?.accountId || account?.account_id || "";
+
+const getAccountKey = (account: any) =>
+    getAccountLoginId(account) || account?.token || account?.authToken || account?.id || "";
+
+const normalizeDerivAccount = (account: any = {}, fallback: any = {}) => {
+    const loginid = getAccountLoginId(account) || getAccountLoginId(fallback);
+    const isVirtual = Boolean(
+        account?.isVirtual ?? account?.is_virtual ?? fallback?.isVirtual ?? fallback?.is_virtual ?? !account?.isLive
+    );
+
+    return {
+        ...fallback,
+        ...account,
+        code: account?.code || loginid || fallback?.code,
+        loginid,
+        accountId: account?.accountId || account?.account_id || fallback?.accountId || fallback?.account_id || loginid,
+        token: account?.token ?? fallback?.token ?? "",
+        authToken: account?.authToken ?? fallback?.authToken ?? "",
+        derivId: account?.derivId || fallback?.derivId || String(myPref.appId),
+        websocketUrl: account?.websocketUrl || fallback?.websocketUrl,
+        currency: account?.currency || fallback?.currency,
+        isLive: Boolean(account?.isLive ?? fallback?.isLive ?? !isVirtual),
+        isVirtual,
+        is_virtual: account?.is_virtual ?? fallback?.is_virtual ?? isVirtual,
+    };
+};
+
+const mergeAuthorizedAccounts = (authorizedAccounts: any[], storedAccounts: any[], activeAccount: any) => {
+    const normalizedStoredAccounts = (Array.isArray(storedAccounts) ? storedAccounts : [])
+        .map((accountItem) => normalizeDerivAccount(accountItem))
+        .filter(getAccountKey);
+    const fallbackAccounts = activeAccount
+        ? [normalizeDerivAccount(activeAccount), ...normalizedStoredAccounts]
+        : normalizedStoredAccounts;
+    const fallbackByLoginId = new Map(
+        fallbackAccounts
+            .filter(getAccountLoginId)
+            .map((accountItem) => [getAccountLoginId(accountItem), accountItem])
+    );
+    const nextAccounts: any[] = [];
+    const seenAccounts = new Set<string>();
+
+    const addAccount = (accountItem: any) => {
+        const normalizedAccount = normalizeDerivAccount(accountItem);
+        const accountKey = getAccountKey(normalizedAccount);
+
+        if (!accountKey || seenAccounts.has(accountKey)) {
+            return;
+        }
+
+        seenAccounts.add(accountKey);
+        nextAccounts.push(normalizedAccount);
+    };
+
+    if (Array.isArray(authorizedAccounts) && authorizedAccounts.length) {
+        authorizedAccounts.forEach((authorizedAccount) => {
+            const fallbackAccount = fallbackByLoginId.get(getAccountLoginId(authorizedAccount));
+            addAccount(normalizeDerivAccount(authorizedAccount, fallbackAccount));
+        });
+    }
+
+    normalizedStoredAccounts.forEach(addAccount);
+
+    return nextAccounts;
+};
+
+const buildSessionAccount = (activeAccount: any, accounts: any[]) => {
+    const normalizedAccount = normalizeDerivAccount(activeAccount);
+
+    return {
+        balance: normalizedAccount.balance ?? 0,
+        currency: normalizedAccount.currency,
+        loginid: normalizedAccount.loginid,
+        is_virtual: normalizedAccount.is_virtual,
+        account_list: accounts,
+    };
+};
 
 const clearOAuthStorage = () => {
     sessionStorage.removeItem(CODE_VERIFIER_KEY);
@@ -184,22 +256,26 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     });
 
     const persistDerivSession = (accounts: any[]) => {
-        if (!accounts.length) {
+        const normalizedAccounts = (Array.isArray(accounts) ? accounts : [])
+            .map((accountItem) => normalizeDerivAccount(accountItem))
+            .filter(getAccountKey);
+
+        if (!normalizedAccounts.length) {
             throw new Error("No Deriv accounts found");
         }
 
-        const firstAccount = accounts[0];
+        const firstAccount = normalizedAccounts[0];
 
-        sessionStorage.setItem("accounts", JSON.stringify(accounts));
+        sessionStorage.setItem("accounts", JSON.stringify(normalizedAccounts));
         sessionStorage.setItem("activeAccount", JSON.stringify(firstAccount));
 
         if (firstAccount.authToken || firstAccount.token) {
             SetCookie(firstAccount.authToken || firstAccount.token);
         }
 
-        setDerivAccounts(accounts);
+        setDerivAccounts(normalizedAccounts);
         setActiveAccount(firstAccount);
-        setAccount(buildSessionAccount(firstAccount, accounts));
+        setAccount(buildSessionAccount(firstAccount, normalizedAccounts));
         setConnected(true);
         setConnectionComplete(true);
         setCookieExists(2);
@@ -215,6 +291,7 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
 
         const account = {
             code,
+            loginid: code,
             token: manualToken,
             authToken: manualToken,
             derivId,
@@ -269,8 +346,10 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
         const loadStoredSession = () => {
             const storedAccounts = safeJSONParse(sessionStorage.getItem("accounts"), []);
             const storedActiveAccount = safeJSONParse(sessionStorage.getItem("activeAccount"), null);
-            const accounts = Array.isArray(storedAccounts) ? storedAccounts : [];
-            const accountToUse = storedActiveAccount || accounts[0];
+            const accounts = (Array.isArray(storedAccounts) ? storedAccounts : [])
+                .map((accountItem) => normalizeDerivAccount(accountItem))
+                .filter(getAccountKey);
+            const accountToUse = normalizeDerivAccount(storedActiveAccount || accounts[0]);
 
             if (derivAccountsFromUrl.length) {
                 persistDerivSession(derivAccountsFromUrl);
@@ -374,24 +453,33 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
                 if (!auth) break;
 
                 const { balance, currency, loginid, is_virtual, account_list } = auth;
-                setAccount({ balance, currency, loginid, is_virtual, account_list });
+                const storedAccounts = safeJSONParse(sessionStorage.getItem("accounts"), []);
+                const authorizedAccounts = Array.isArray(account_list) ? account_list : [];
+                const mergedAccounts = mergeAuthorizedAccounts(authorizedAccounts, storedAccounts, activeAccount);
+                const activeFallback =
+                    mergedAccounts.find((accountItem) => getAccountLoginId(accountItem) === loginid) || activeAccount;
+                const updatedActiveAccount = normalizeDerivAccount(
+                    { ...activeFallback, balance, currency, loginid, is_virtual },
+                    activeFallback
+                );
+                const hasUpdatedActiveAccount = mergedAccounts.some(
+                    (accountItem) => getAccountLoginId(accountItem) === loginid
+                );
+                const nextAccounts = hasUpdatedActiveAccount
+                    ? mergedAccounts.map((accountItem) =>
+                        getAccountLoginId(accountItem) === loginid
+                            ? normalizeDerivAccount(updatedActiveAccount, accountItem)
+                            : accountItem
+                    )
+                    : [updatedActiveAccount, ...mergedAccounts];
+
+                setAccount({ balance, currency, loginid, is_virtual, account_list: nextAccounts });
 
                 if (loginid && activeAccount) {
-                    const updatedActiveAccount = { ...activeAccount, loginid };
                     toggleActiveAccount(updatedActiveAccount);
-
-                    setDerivAccounts((prevAccounts: any[]) =>
-                        prevAccounts.map((accountItem: any) => {
-                            const matchesActiveAccount =
-                                accountItem.code === activeAccount.code ||
-                                accountItem.loginid === activeAccount.loginid ||
-                                accountItem.token === activeAccount.token ||
-                                accountItem.authToken === activeAccount.authToken;
-
-                            return matchesActiveAccount ? { ...accountItem, loginid } : accountItem;
-                        })
-                    );
                 }
+
+                setDerivAccounts(nextAccounts);
                 break;
             }
             case "balance": {
@@ -492,12 +580,18 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     const handleToggleChat = () => setIsChatVisible(prev => !prev);
 
     const handleActiveAccount = (account: any) => {
-        setActiveAccount(account);
-        toggleActiveAccount(account);
-        setAccount(buildSessionAccount(account, safeJSONParse(sessionStorage.getItem("accounts"), [])));
+        const storedAccounts = safeJSONParse(sessionStorage.getItem("accounts"), []);
+        const normalizedAccounts = (Array.isArray(storedAccounts) ? storedAccounts : [])
+            .map((accountItem) => normalizeDerivAccount(accountItem))
+            .filter(getAccountKey);
+        const normalizedAccount = normalizeDerivAccount(account);
 
-        if (account.authToken || account.token) {
-            SetCookie(account.authToken || account.token);
+        setActiveAccount(normalizedAccount);
+        toggleActiveAccount(normalizedAccount);
+        setAccount(buildSessionAccount(normalizedAccount, normalizedAccounts));
+
+        if (normalizedAccount.authToken || normalizedAccount.token) {
+            SetCookie(normalizedAccount.authToken || normalizedAccount.token);
             setShowDerivAuthPopup(false);
         }
     };

@@ -7,11 +7,14 @@ interface Bet {
     id: string;
     code: string;
     appId: string;
+    round_id?: string | number;
     multiplier: number;
     bet_amount: number;
     createdAt: string;
+    updatedAt?: string;
     profit: number;
-    status: "won" | "lost";
+    status: "open" | "won" | "lost" | "cancelled" | string;
+    currency?: string;
 }
 
 interface ActiveAccount {
@@ -28,6 +31,67 @@ interface MyBetHistoryProps {
     activeAccount: ActiveAccount;
     BetData: Record<string, Bet>;
 }
+
+const FINAL_STATUSES = new Set(["won", "lost", "sold", "cancelled"]);
+
+const normalizeStatus = (status: any) => String(status || "").toLowerCase();
+
+const getBetKey = (bet: Bet) =>
+    bet.round_id && bet.code && bet.appId
+        ? `${bet.round_id}:${bet.code}:${bet.appId}`
+        : String(bet.id || "");
+
+const getBetLifecycleKey = (bet: Bet) =>
+    [
+        bet.code || "",
+        bet.appId || "",
+        bet.currency || "",
+        String(bet.bet_amount || ""),
+    ].join(":");
+
+const getBetTimestamp = (bet: Bet) => {
+    const timestamp = new Date(bet.updatedAt || bet.createdAt || 0).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const sortBetsByNewest = (bets: Bet[]) =>
+    [...bets].sort((a, b) => getBetTimestamp(b) - getBetTimestamp(a));
+
+const dedupeBetsByTrade = (bets: Bet[]) => {
+    const byTrade = new Map<string, Bet>();
+
+    sortBetsByNewest(bets).forEach((bet) => {
+        const tradeKey = getBetKey(bet);
+
+        if (!byTrade.has(tradeKey)) {
+            byTrade.set(tradeKey, bet);
+        }
+    });
+
+    return Array.from(byTrade.values());
+};
+
+const dedupeResolvedOpenBets = (bets: Bet[]) => {
+    const finalTrades = new Set<string>();
+    const nextBets: Bet[] = [];
+
+    sortBetsByNewest(dedupeBetsByTrade(bets)).forEach((bet) => {
+        const status = normalizeStatus(bet.status);
+        const lifecycleKey = getBetLifecycleKey(bet);
+
+        if (!FINAL_STATUSES.has(status) && finalTrades.has(lifecycleKey)) {
+            return;
+        }
+
+        nextBets.push(bet);
+
+        if (FINAL_STATUSES.has(status)) {
+            finalTrades.add(lifecycleKey);
+        }
+    });
+
+    return nextBets;
+};
 
 export default function MyBetHistory({
     onClose,
@@ -58,11 +122,11 @@ export default function MyBetHistory({
             const accountCode = activeAccount.loginid || activeAccount.code || activeAccount.accountId;
             const accountAppId = activeAccount.derivId || activeAccount.appId;
             const allBets = Object.values(BetData);
-            const filtered = allBets.filter(
+            const filtered = dedupeResolvedOpenBets(allBets.filter(
                 (bet) =>
                     (bet.code === accountCode || bet.code === activeAccount.code) &&
                     bet.appId === accountAppId
-            );
+            ));
             setFilteredBets(filtered);
             setVisibleBets(filtered.slice(0, 10));
         }
@@ -128,7 +192,7 @@ export default function MyBetHistory({
                         </div>
                     ) : (
                         visibleBets
-                        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                        .sort((a: any, b: any) => getBetTimestamp(b) - getBetTimestamp(a))
                         .map((bet) => {
                             const formattedMultiplier = parseFloat(
                                 bet.multiplier.toString()
