@@ -532,7 +532,7 @@ export default function Bet() {
                                 </div>
                                 <div className="aviator-auto-multiplier-input">
                                     <input
-                                        disabled={!isAutoCashoutInputEnabled}
+                                        disabled={!isAutoCashoutInputEnabled || (AutoTradeBetOne && betOnePlaced && betOneStatus === "active" && isflyAway === "false")}
                                         type="text"
                                         id="aviator-auto-multiplier1"
                                         className="aviator-auto-multiplier"
@@ -540,7 +540,7 @@ export default function Bet() {
                                         value={inputValues.input3.toFixed(2)}
                                     />
                                     <button
-                                        disabled={!isAutoCashoutInputEnabled}
+                                        disabled={!isAutoCashoutInputEnabled || (AutoTradeBetOne && betOnePlaced && betOneStatus === "active" && isflyAway === "false")}
                                         id="clear-input-btn1"
                                         className="aviator-auto-multiplier-clearinput"
                                         onClick={() => setInputValues((prevValues) => ({ ...prevValues, input3: 0 }))}
