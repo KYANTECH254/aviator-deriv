@@ -6,7 +6,17 @@ const INITIAL_MULTIPLIER = 1;
 const DERIV_SYMBOL = process.env.DERIV_SYMBOL || 'R_10';
 const CRASH_DELAY_MS = Number(process.env.CRASH_DELAY_MS || 7000);
 const PING_INTERVAL_MS = Number(process.env.DERIV_PING_INTERVAL_MS || 30000);
-const PRICE_CHANGE_THRESHOLD = Number(process.env.PRICE_CHANGE_THRESHOLD || 0.04863);
+const DEFAULT_PRICE_CHANGE_THRESHOLDS = {
+  R_10: 0.2413,
+  R_25: 0.012,
+  R_50: 0.024,
+  R_100: 0.04863,
+};
+const PRICE_CHANGE_THRESHOLD = Number(
+  process.env.PRICE_CHANGE_THRESHOLD ||
+  DEFAULT_PRICE_CHANGE_THRESHOLDS[DERIV_SYMBOL] ||
+  DEFAULT_PRICE_CHANGE_THRESHOLDS.R_100
+);
 const DISPLAY_INTERVAL_MS = Number(process.env.DISPLAY_INTERVAL_MS || 50);
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
@@ -294,19 +304,27 @@ function initializeDerivWebSocket(io) {
       return;
     }
 
-    const priceChangePercentage = ((newPrice - previousPrice) / previousPrice) * 100;
+    const priceChange = newPrice - previousPrice;
+    const priceChangePercentage = (priceChange / previousPrice) * 100;
+    const crashChangeValue = DERIV_SYMBOL === 'R_10'
+      ? priceChange
+      : priceChangePercentage;
 
     console.log('Tick state:', {
       crashState,
       previousPriceValue,
       newPrice,
+      priceChange,
       priceChangePercentage,
+      crashChangeValue,
       confirmedMultiplier: formatMultiplier(confirmedMultiplier),
     });
 
-    if (Math.abs(priceChangePercentage) > PRICE_CHANGE_THRESHOLD) {
+    if (Math.abs(crashChangeValue) > PRICE_CHANGE_THRESHOLD) {
       console.log('Crash triggered:', {
+        priceChange,
         priceChangePercentage,
+        crashChangeValue,
         threshold: PRICE_CHANGE_THRESHOLD,
         maxMultiplier: formatMultiplier(confirmedMultiplier),
       });
