@@ -580,6 +580,10 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
         setSelectedAvatar(newAvatar);
     };
 
+    const handleToggleChat = () => {
+        setIsChatVisible((prev) => !prev);
+    };
+
     const handleLogout = () => {
         if (typeof window !== "undefined") {
             localStorage.removeItem("accounts");
@@ -598,6 +602,7 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
         setCookieExists(3);
     };
 
+    const handleActiveAccount = (account: any) => {
         const storedAccounts = safeJSONParse(localStorage.getItem("accounts"), []);
         const normalizedAccounts = (Array.isArray(storedAccounts) ? storedAccounts : [])
             .map((accountItem) => normalizeDerivAccount(accountItem))

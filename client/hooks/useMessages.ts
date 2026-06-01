@@ -35,7 +35,7 @@ export const useMessages = ({
   const [trades, setTrades] = useState<Trade[]>([])
   const [takeProfitForBetOne, setTakeProfitForBetOne] = useState<number>(1.10)
   const [strategy, setStrategy] = useState<string>("first")
-  const [symbol, setSymbol] = useState<string>("R_100")
+  const [symbol, setSymbol] = useState<string>("R_10")
   const [resetDemoBal, setResetDemoBal] = useState<boolean>()
   const [RoundID, setRoundID] = useState<number>()
   const [CashoutX, setCashoutX] = useState<any>()
@@ -127,7 +127,7 @@ export const useMessages = ({
             proposal: 1,
             amount: stakeForbetOneRef.current,
             contract_type: "ACCU",
-            currency: "USD",
+            currency: account?.currency || "USD",
             basis: "stake",
             growth_rate: 0.05,
             limit_order: {
@@ -142,7 +142,7 @@ export const useMessages = ({
             proposal: 1,
             amount: stakeForbetOneRef.current,
             contract_type: "ACCU",
-            currency: "USD",
+            currency: account?.currency || "USD",
             basis: "stake",
             growth_rate: 0.05,
             duration_unit: "s",

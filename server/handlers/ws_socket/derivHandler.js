@@ -3,7 +3,7 @@ const prisma = require('../../services/db');
 const redisClient = require('../../config/redisConfig');
 
 const INITIAL_MULTIPLIER = 1;
-const DERIV_SYMBOL = process.env.DERIV_SYMBOL || 'R_100';
+const DERIV_SYMBOL = process.env.DERIV_SYMBOL || 'R_10';
 const CRASH_DELAY_MS = Number(process.env.CRASH_DELAY_MS || 7000);
 const PING_INTERVAL_MS = Number(process.env.DERIV_PING_INTERVAL_MS || 30000);
 const PRICE_CHANGE_THRESHOLD = Number(process.env.PRICE_CHANGE_THRESHOLD || 0.04863);
