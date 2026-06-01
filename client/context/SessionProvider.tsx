@@ -38,6 +38,7 @@ type SessionContextType = {
     handleAvatarUpdate: (avatar: string) => void;
     handleToggleChat: () => void;
     handleActiveAccount: (account: any) => void;
+    handleLogout: () => void;
     isChatVisible: boolean;
     connectionComplete: boolean;
     cookieExists: number;
@@ -266,8 +267,10 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
 
         const firstAccount = normalizedAccounts[0];
 
-        sessionStorage.setItem("accounts", JSON.stringify(normalizedAccounts));
-        sessionStorage.setItem("activeAccount", JSON.stringify(firstAccount));
+        if (typeof window !== "undefined") {
+            localStorage.setItem("accounts", JSON.stringify(normalizedAccounts));
+            localStorage.setItem("activeAccount", JSON.stringify(firstAccount));
+        }
 
         if (firstAccount.authToken || firstAccount.token) {
             SetCookie(firstAccount.authToken || firstAccount.token);
@@ -344,8 +347,8 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
         let cancelled = false;
 
         const loadStoredSession = () => {
-            const storedAccounts = safeJSONParse(sessionStorage.getItem("accounts"), []);
-            const storedActiveAccount = safeJSONParse(sessionStorage.getItem("activeAccount"), null);
+            const storedAccounts = safeJSONParse(localStorage.getItem("accounts"), []);
+            const storedActiveAccount = safeJSONParse(localStorage.getItem("activeAccount"), null);
             const accounts = (Array.isArray(storedAccounts) ? storedAccounts : [])
                 .map((accountItem) => normalizeDerivAccount(accountItem))
                 .filter(getAccountKey);
@@ -453,7 +456,7 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
                 if (!auth) break;
 
                 const { balance, currency, loginid, is_virtual, account_list } = auth;
-                const storedAccounts = safeJSONParse(sessionStorage.getItem("accounts"), []);
+                const storedAccounts = safeJSONParse(localStorage.getItem("accounts"), []);
                 const authorizedAccounts = Array.isArray(account_list) ? account_list : [];
                 const mergedAccounts = mergeAuthorizedAccounts(authorizedAccounts, storedAccounts, activeAccount);
                 const activeFallback =
@@ -550,8 +553,8 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
                             : accountItem
                     );
                     if (typeof window !== "undefined") {
-                        sessionStorage.setItem("accounts", JSON.stringify(nextAccounts));
-                        sessionStorage.setItem("activeAccount", JSON.stringify(updatedAccount));
+                        localStorage.setItem("accounts", JSON.stringify(nextAccounts));
+                        localStorage.setItem("activeAccount", JSON.stringify(updatedAccount));
                     }
                     return nextAccounts;
                 });
@@ -577,10 +580,25 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
         setSelectedAvatar(newAvatar);
     };
 
-    const handleToggleChat = () => setIsChatVisible(prev => !prev);
+    const handleLogout = () => {
+        if (typeof window !== "undefined") {
+            localStorage.removeItem("accounts");
+            localStorage.removeItem("activeAccount");
+            sessionStorage.removeItem("accounts");
+            sessionStorage.removeItem("activeAccount");
+        }
+        DeleteCookie("token");
+        setDerivAccounts([]);
+        setActiveAccount(null);
+        setAccount(null);
+        setConnected(false);
+        setConnectionComplete(false);
+        setError("Connect your Deriv account to play");
+        setShowDerivAuthPopup(true);
+        setCookieExists(3);
+    };
 
-    const handleActiveAccount = (account: any) => {
-        const storedAccounts = safeJSONParse(sessionStorage.getItem("accounts"), []);
+        const storedAccounts = safeJSONParse(localStorage.getItem("accounts"), []);
         const normalizedAccounts = (Array.isArray(storedAccounts) ? storedAccounts : [])
             .map((accountItem) => normalizeDerivAccount(accountItem))
             .filter(getAccountKey);
@@ -623,6 +641,7 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
                     handleAvatarUpdate,
                     handleToggleChat,
                     handleActiveAccount,
+                    handleLogout,
                     isChatVisible,
                     connectionComplete,
                     cookieExists,
@@ -662,6 +681,7 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
                 handleAvatarUpdate,
                 handleToggleChat,
                 handleActiveAccount,
+                handleLogout,
                 isChatVisible,
                 connectionComplete,
                 cookieExists,

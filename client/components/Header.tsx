@@ -7,6 +7,7 @@ import FreeBets from "./PopUps/FreeBets";
 import GameRules from "./PopUps/GameRules";
 import HowToPlay from "./PopUps/HowToPlay";
 import MyBetHistory from "./PopUps/MyBetHistory";import { useSettings } from "@/context/SettingsContext";
+import { useSession } from "@/context/SessionProvider";
 ;
 
 interface HeaderProps {
@@ -33,6 +34,7 @@ interface HeaderProps {
     isChatVisible,
   }: HeaderProps) {
     const { isMusicEnabled, isSoundEnabled, isAnimationEnabled, toggleMusic, toggleSound, toggleAnimation } = useSettings();
+    const { handleLogout } = useSession();
     const [activeTab, setActiveTab] = useState<string>("");
     const balance = Number(account?.balance);
     const formattedBalance = Number.isFinite(balance) ? balance.toLocaleString('en-US') : "0.00";
@@ -211,14 +213,29 @@ interface HeaderProps {
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        <div className="aviator-menu-section-bottom">
-                            <i className="fa fa-home" aria-hidden="true"></i>
-                            <a className="home-link" href="https://topwebtools.online">
-                                <div className="aviator-menu-section-bottom-text">Home</div>
-                            </a>
+                        <div className="aviator-menu-section-separator"></div>
+                        <div
+                            id="aviator-logout-btn"
+                            className="aviator-menu-item"
+                            onClick={() => {
+                                handleLogout();
+                                setActiveTab("");
+                            }}
+                        >
+                            <div className="aviator-menu-left-item">
+                                <i className="fa fa-sign-out aviator-van-icon" aria-hidden="true"></i>
+                                <div className="aviator-menu-left-item-text">Logout</div>
+                            </div>
                         </div>
                     </div>
+                </div>
+                <div className="aviator-menu-section-bottom">
+                    <i className="fa fa-home" aria-hidden="true"></i>
+                    <a className="home-link" href="https://topwebtools.online">
+                        <div className="aviator-menu-section-bottom-text">Home</div>
+                    </a>
+                </div>
+            </div>
                 }
 
             </header>
