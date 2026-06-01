@@ -36,6 +36,11 @@ export default function FreeBets({ onClose, onToggleActiveAccount }: any) {
     }, []);
 
     const handleAccountClick = (account: any) => {
+        // Only allow USD accounts
+        if (account.currency !== 'USD') {
+            return;
+        }
+        
         setSelectedAccount(getAccountLoginId(account));
         toggleActiveAccount(account)
         onToggleActiveAccount(account)
@@ -70,11 +75,15 @@ export default function FreeBets({ onClose, onToggleActiveAccount }: any) {
                                     const loginId = getAccountLoginId(account) || tokenShort || "Unknown";
                                     const accountKey = account.loginid || account.code || account.accountId || tokenShort || loginId;
 
+                                    const isDisabled = account.currency !== 'USD';
+                                    
                                     return (
                                         <div
                                             key={accountKey}
-                                            className={`aviator-popup-accounts-box display-center ${selectedAccount === loginId ? "selected" : ""}`}
+                                            className={`aviator-popup-accounts-box display-center ${selectedAccount === loginId ? "selected" : ""}${isDisabled ? " disabled" : ""}`}
                                             onClick={() => handleAccountClick(account)}
+                                            style={isDisabled ? { opacity: '0.5', cursor: 'not-allowed' } : {}}
+                                            title={isDisabled ? 'Only USD accounts are supported' : ''}
                                         >
                                             <div className="account-details">
                                                 <div className="account-loginid" style={{ fontSize: '14px', fontWeight: '600' }}>{loginId}</div>
