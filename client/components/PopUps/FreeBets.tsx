@@ -11,10 +11,16 @@ export default function FreeBets({ onClose, onToggleActiveAccount }: any) {
     const popupRef = useRef<HTMLDivElement>(null);
     const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
     const { activeAccount, storedAccounts, toggleActiveAccount } = useStoredAccounts()
+    
+    // Filter out manual accounts
+    const filteredAccounts = storedAccounts.filter((account: any) => {
+        const loginId = getAccountLoginId(account);
+        return !loginId?.toLowerCase().startsWith('manual');
+    });
 
     useEffect(() => {
-        setSelectedAccount(getAccountLoginId(activeAccount) || getAccountLoginId(storedAccounts[0]) || null);
-    }, [activeAccount, storedAccounts]);
+        setSelectedAccount(getAccountLoginId(activeAccount) || getAccountLoginId(filteredAccounts[0]) || null);
+    }, [activeAccount, filteredAccounts]);
 
     const handleOutsideClick = (event: any) => {
         if (popupRef.current && !popupRef.current.contains(event.target)) {
@@ -54,12 +60,12 @@ export default function FreeBets({ onClose, onToggleActiveAccount }: any) {
                 <div id="free-bets-tab" className="aviator-popup-freebets-body">
                     <div className="aviator-popup-freebets-body-container display-center">
                         <div className="aviator-popup-freebets-body-container-bottom display-center">
-                            {storedAccounts.length === 0 ? (
+                            {filteredAccounts.length === 0 ? (
                                 <div className="no-accounts-message">
                                     No accounts available
                                 </div>
                             ) : (
-                                storedAccounts.map((account) => {
+                                filteredAccounts.map((account) => {
                                     const tokenShort = account.token?.slice(0, 8).toUpperCase();
                                     const loginId = getAccountLoginId(account) || tokenShort || "Unknown";
                                     const accountKey = account.loginid || account.code || account.accountId || tokenShort || loginId;
@@ -71,8 +77,8 @@ export default function FreeBets({ onClose, onToggleActiveAccount }: any) {
                                             onClick={() => handleAccountClick(account)}
                                         >
                                             <div className="account-details">
-                                                <div className="account-loginid">{loginId}</div>
-                                                <div className="account-currency">{account.currency}</div>
+                                                <div className="account-loginid" style={{ fontSize: '14px', fontWeight: '600' }}>{loginId}</div>
+                                                <div className="account-currency" style={{ fontSize: '12px', fontWeight: '500' }}>{account.currency}</div>
                                             </div>
                                         </div>
                                     )
