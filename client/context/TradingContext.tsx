@@ -28,6 +28,7 @@ interface TradingContextType {
   trades: Trade[]
   CashOutBetOne: boolean
   WonAmount: number
+  LastSettledTradeId: string
   RoundStarted: boolean
   RoundID: number | undefined
   takeProfitForBetOne: number
@@ -85,6 +86,7 @@ export const TradingProvider = ({
   const [runningTrades, setRunningTrades] = useState<number>(0)
   const [stakeForbetOne, setStakeForbetOne] = useState<any>(10)
   const [WonAmount, setWonAmount] = useState<number>(0)
+  const [LastSettledTradeId, setLastSettledTradeId] = useState<string>("")
   const [ContractId, setContractId] = useState<number>()
   const [trades] = useState<Trade[]>([])
   const [takeProfitForBetOne, setTakeProfitForBetOne] = useState<number>(1.1)
@@ -99,11 +101,13 @@ export const TradingProvider = ({
   const accountRef = useRef(account)
   const stakeForbetOneRef = useRef(stakeForbetOne)
   const RoundIDRef = useRef(RoundID)
+  const ContractIdRef = useRef(ContractId)
   const previousStatusRef = useRef(previousStatus)
   const openBetAnnouncementKeyRef = useRef("")
   const proposalRequestKeyRef = useRef("")
   const cashoutRequestKeyRef = useRef("")
   const accountSubscriptionKeyRef = useRef("")
+  const finalizedContractKeyRef = useRef("")
 
   useEffect(() => {
     accountRef.current = account
@@ -116,6 +120,10 @@ export const TradingProvider = ({
   useEffect(() => {
     RoundIDRef.current = RoundID
   }, [RoundID])
+
+  useEffect(() => {
+    ContractIdRef.current = ContractId
+  }, [ContractId])
 
   useEffect(() => {
     previousStatusRef.current = previousStatus
@@ -193,6 +201,7 @@ export const TradingProvider = ({
       setAutoTradeBetOne(false)
       proposalRequestKeyRef.current = ""
       cashoutRequestKeyRef.current = ""
+      finalizedContractKeyRef.current = ""
 
       if (emitCancelled) {
         const cancelledBet = createBetData("cancelled", "", 0)
@@ -332,6 +341,9 @@ export const TradingProvider = ({
       const stake = toFiniteNumber(stakeForbetOneRef.current)
       const wonAmount = trimToTwoDecimals(stake + profit)
       const cashout = stake > 0 ? (wonAmount / stake).toFixed(2) : "0.00"
+      const settlementKey = contractId
+        ? String(contractId)
+        : `${RoundIDRef.current || ""}:${accountRef.current?.loginid || ""}:${stake}:${status}:${profit}`
       const isClosed =
         status === "won" ||
         status === "lost" ||
@@ -354,14 +366,17 @@ export const TradingProvider = ({
 
       if (!isClosed) return
 
-      const finalStatus = status || "sold"
-      if (previousStatusRef.current === finalStatus) return
+      if (finalizedContractKeyRef.current === settlementKey) return
+      finalizedContractKeyRef.current = settlementKey
+
+      const finalStatus = status === "lost" || profit < 0 ? "lost" : "won"
 
       setRunningTrades(0)
       setbetOnePlaced(false)
       setbetOneStatus("")
       setContractId(undefined)
-      setWonAmount(wonAmount > 0 ? wonAmount : 0)
+      setWonAmount(finalStatus === "won" && wonAmount > 0 ? wonAmount : 0)
+      setLastSettledTradeId(settlementKey)
       setCashOutBetOne(false)
       setPreviousStatus(finalStatus)
       proposalRequestKeyRef.current = ""
@@ -414,6 +429,7 @@ export const TradingProvider = ({
         if (buy?.contract_id) {
           setAccount((prev: any) => ({ ...prev, balance: buy.balance_after ?? prev?.balance }))
           setContractId(buy.contract_id)
+          finalizedContractKeyRef.current = ""
           setRunningTrades(1)
           setbetOneStatus("active")
           setWonAmount(0)
@@ -429,24 +445,33 @@ export const TradingProvider = ({
           setAccount((prev: any) => ({ ...prev, balance: sell.balance_after }))
         }
 
-        if (sell?.sold_for !== undefined && sell?.sold_for !== null && previousStatusRef.current !== "sold") {
+        if (sell?.sold_for !== undefined && sell?.sold_for !== null) {
           const stake = toFiniteNumber(stakeForbetOneRef.current)
           const soldFor = trimToTwoDecimals(toFiniteNumber(sell.sold_for))
           const profit = trimToTwoDecimals(soldFor - stake)
           const cashout = stake > 0 ? (soldFor / stake).toFixed(2) : "0.00"
+          const settlementKey = ContractIdRef.current ? String(ContractIdRef.current) : `${RoundIDRef.current || ""}:${accountRef.current?.loginid || ""}:${stake}:sold:${profit}`
+          const finalStatus = profit < 0 ? "lost" : "won"
+
+          if (finalizedContractKeyRef.current === settlementKey) {
+            break
+          }
+
+          finalizedContractKeyRef.current = settlementKey
 
           setRunningTrades(0)
           setbetOnePlaced(false)
           setbetOneStatus("")
           setContractId(undefined)
-          setWonAmount(soldFor > 0 ? soldFor : 0)
+          setWonAmount(finalStatus === "won" && soldFor > 0 ? soldFor : 0)
+          setLastSettledTradeId(settlementKey)
           setCashOutBetOne(false)
-          setPreviousStatus("sold")
+          setPreviousStatus(finalStatus)
           proposalRequestKeyRef.current = ""
           cashoutRequestKeyRef.current = ""
           openBetAnnouncementKeyRef.current = ""
 
-          const betdata = createBetData("sold", cashout, profit)
+          const betdata = createBetData(finalStatus, cashout, profit)
           if (betdata) {
             emitBetData(betdata)
           }
@@ -483,6 +508,7 @@ export const TradingProvider = ({
     trades,
     CashOutBetOne,
     WonAmount,
+    LastSettledTradeId,
     RoundStarted,
     RoundID,
     takeProfitForBetOne,

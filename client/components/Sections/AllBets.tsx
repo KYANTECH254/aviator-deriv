@@ -71,6 +71,19 @@ const dedupeBetsByTrade = (bets: BetRecord[]) => {
     return Array.from(byTrade.values());
 };
 
+const isOlderRound = (nextRoundId: any, currentRoundId: any) => {
+    if (!nextRoundId || !currentRoundId) return false;
+
+    const nextRoundNumber = Number(nextRoundId);
+    const currentRoundNumber = Number(currentRoundId);
+
+    if (Number.isFinite(nextRoundNumber) && Number.isFinite(currentRoundNumber)) {
+        return nextRoundNumber < currentRoundNumber;
+    }
+
+    return String(nextRoundId) !== String(currentRoundId);
+};
+
 const normalizeLiveBetsPayload = (payload: any): LiveBetsPayload => {
     if (Array.isArray(payload)) {
         return {
@@ -164,6 +177,45 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
     const { addAlert } = useAlert();
 
     useEffect(() => {
+        if (!socket?.on || !socket?.off) return;
+
+        const handleRoundId = (data: any) => {
+            const nextRoundId = data?.round_id ?? data;
+            if (!nextRoundId) return;
+
+            setCurrentRoundId((previousRoundId: any) => {
+                const normalizedNextRoundId = String(nextRoundId);
+
+                if (String(previousRoundId || '') === normalizedNextRoundId) {
+                    return previousRoundId;
+                }
+
+                setLiveBets((currentBets) => {
+                    const previousRoundBets = dedupeBetsByTrade(currentBets);
+
+                    if (previousRoundBets.length > 0) {
+                        setPreviousBets(previousRoundBets);
+                        setPreviousRoundId(previousRoundBets[0]?.round_id ? String(previousRoundBets[0].round_id) : String(previousRoundId || ''));
+                        setPreviousTotalBets(previousRoundBets.length);
+                    }
+
+                    return [];
+                });
+                setTotalBets(0);
+                setLoading(false);
+
+                return normalizedNextRoundId;
+            });
+        };
+
+        socket.on("round_id", handleRoundId);
+
+        return () => {
+            socket.off("round_id", handleRoundId);
+        };
+    }, [socket]);
+
+    useEffect(() => {
         if (activeTab === 'live-bets') {
             setActiveRound("current")
         } else if (activeTab !== 'live-bets') {
@@ -196,6 +248,11 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
             totalPreviousBetsCount,
         } = normalizeLiveBetsPayload(LiveBetsData);
 
+        if (isOlderRound(round_id, currentRoundId)) {
+            setLoading(false);
+            return;
+        }
+
         const nextLiveBets = dedupeBetsByTrade(bets);
         const nextPreviousBets = dedupeBetsByTrade(previousRoundBets);
 
@@ -206,7 +263,7 @@ export default function AllBets({ activeAccount, AllbetsData, Multipliers, socke
         setPreviousRoundId(nextPreviousBets[0]?.round_id ? String(nextPreviousBets[0].round_id) : '');
         setPreviousTotalBets(totalPreviousBetsCount || nextPreviousBets.length);
         setLoading(false);
-    }, [LiveBetsData]);
+    }, [LiveBetsData, currentRoundId]);
 
     useEffect(() => {
         if (!UpdatedBetData?.id) return;

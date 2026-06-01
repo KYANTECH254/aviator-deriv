@@ -35,6 +35,7 @@ export default function Bet() {
         setWonAmount,
         setRoundStarted,
         WonAmount,
+        LastSettledTradeId,
         setRoundID,
         CashoutX,
         ErrorMessage,
@@ -42,6 +43,7 @@ export default function Bet() {
     
     const isBetOneAutoRef = useRef(isBetOneAuto)
     const previousFlyAwayRef = useRef(isflyAway)
+    const lastWinAlertRef = useRef("")
     const accountBalance = Number(account?.balance)
     const hasSyncedBalance = Number.isFinite(accountBalance)
     const currency = account?.currency || activeAccount?.currency || ""
@@ -129,6 +131,14 @@ export default function Bet() {
     useEffect(() => {
         const handleWin = () => {
             if (WonAmount > 0) {
+                const alertKey = LastSettledTradeId || `${WonAmount}:${CashoutX}:${account?.currency}`;
+
+                if (lastWinAlertRef.current === alertKey) {
+                    setWonAmount(0);
+                    return;
+                }
+
+                lastWinAlertRef.current = alertKey;
                 const won = {
                     amount: WonAmount,
                     cashout: CashoutX,
@@ -143,7 +153,7 @@ export default function Bet() {
             }
         }
         handleWin();
-    }, [WonAmount, CashOutBetOne, CashoutX, account?.currency, addAlert, eventTriggered, setWonAmount]);
+    }, [WonAmount, LastSettledTradeId, CashoutX, account?.currency, addAlert, eventTriggered, setWonAmount]);
 
     useEffect(() => {
         const SendBetData = () => {

@@ -156,6 +156,18 @@ const placeBet = async (socket, io) => {
                 });
             }
 
+            const duplicateBetIds = existingBets
+                .filter((existingBet) => existingBet.id !== savedBet.id)
+                .map((existingBet) => existingBet.id);
+
+            if (duplicateBetIds.length > 0) {
+                await prisma.bet.deleteMany({
+                    where: {
+                        id: { in: duplicateBetIds },
+                    },
+                });
+            }
+
             io.emit('bet-updated', savedBet);
             await emitAllBetsData(io);
             await fetchLiveBets(io);
