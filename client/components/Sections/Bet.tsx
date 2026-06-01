@@ -272,9 +272,11 @@ export default function Bet() {
         if (parts[1] && parts[1].length > 2) {
             value = parseFloat(value).toFixed(2);
         }
+        // Always store as number, never empty string
+        const numValue = value === '' || value === '.' ? 0 : parseFloat(value) || 0;
         setInputValues((prevValues) => ({
             ...prevValues,
-            [id]: value === '' ? '' : parseFloat(value) || 0,
+            [id]: numValue,
         }));
     };
 
@@ -291,9 +293,11 @@ export default function Bet() {
         if (parts[1] && parts[1].length > 2) {
             value = parseFloat(value).toFixed(2);
         }
+        // Always store as number, never empty string
+        const numValue = value === '' || value === '.' ? 1.10 : parseFloat(value) || 1.10;
         setInputValues((prevValues) => ({
             ...prevValues,
-            [inputKey]: value === '' ? '' : parseFloat(value) || 1.10,
+            [inputKey]: numValue,
         }));
     };
 
@@ -433,7 +437,7 @@ export default function Bet() {
                                 id="input1"
                                 onChange={handleInputChange}
                                 placeholder="0.00"
-                                value={typeof inputValues.input1 === 'number' ? inputValues.input1.toFixed(2) : inputValues.input1}
+                                value={Number(inputValues.input1).toFixed(2)}
                             />
                             <div
                                 className="plus-btn"
@@ -512,7 +516,7 @@ export default function Bet() {
                             {!betOnePlaced && (
                                 <>
                                     <span className="aviator-bet-btn-text">BET</span>
-                                    <span id="aviator-bet-btn-amount" className="aviator-bet-btn-amount">{inputValues.input1.toFixed(2)} {currency}</span>
+                                    <span id="aviator-bet-btn-amount" className="aviator-bet-btn-amount">{Number(inputValues.input1).toFixed(2)} {currency}</span>
                                 </>
                             )}
                         </button>
@@ -560,7 +564,7 @@ export default function Bet() {
                                         className="aviator-auto-multiplier"
                                         onChange={(e) => handleCashOutInputChange(e, 'input3')}
                                         placeholder="1.10"
-                                        value={typeof inputValues.input3 === 'number' ? inputValues.input3.toFixed(2) : inputValues.input3}
+                                        value={Number(inputValues.input3).toFixed(2)}
                                     />
                                     <button
                                         disabled={!isAutoCashoutInputEnabled || (AutoTradeBetOne && betOnePlaced && betOneStatus === "active" && isflyAway === "false")}
